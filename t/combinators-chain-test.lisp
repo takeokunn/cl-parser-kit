@@ -1,0 +1,83 @@
+(in-package :cl-parser-kit/test)
+
+(deftest-case combinator-chainl1-test
+  (let* ((tokens (vector (make-token :type :number :text "10" :value 10)
+                         (make-token :type :minus :text "-")
+                         (make-token :type :number :text "3" :value 3)
+                         (make-token :type :minus :text "-")
+                         (make-token :type :number :text "2" :value 2)))
+         (value-parser (map-parser (type-token :number) #'token-value))
+         (minus-parser
+           (operator-parser (type-token :minus)
+                            (lambda (left right)
+                              (- left right))))
+         (parser (chainl1 value-parser minus-parser)))
+    (assert-combinator-success (parse-tokens parser tokens) (value next failure)
+      (assert-equal 5 next)
+      (assert-equal 5 value))))
+
+(deftest-case combinator-chainr1-test
+  (let* ((tokens (vector (make-token :type :number :text "2" :value 2)
+                         (make-token :type :caret :text "^")
+                         (make-token :type :number :text "3" :value 3)
+                         (make-token :type :caret :text "^")
+                         (make-token :type :number :text "2" :value 2)))
+         (value-parser (map-parser (type-token :number) #'token-value))
+         (power-parser
+           (operator-parser (type-token :caret)
+                            (lambda (left right)
+                              (expt left right))))
+         (parser (chainr1 value-parser power-parser)))
+    (assert-combinator-success (parse-tokens parser tokens) (value next failure)
+      (assert-equal 5 next)
+      (assert-equal 512 value))))
+
+(deftest-case combinator-operator-parser-preserves-failure-test
+  (let* ((tokens (vector (make-token :type :plus :text "+")))
+         (parser (operator-parser (literal "-" :type :minus)
+                                  (lambda (left right)
+                                    (+ left right)))))
+    (assert-combinator-failure (parse-tokens parser tokens) (value next failure)
+      (assert-equal 0 next)
+      (assert-equal :minus (parse-failure-expected failure))
+      (assert-equal :plus (token-type (parse-failure-actual failure))))))
+
+(deftest-case combinator-chainl1-rejects-non-advancing-operator-test
+  (let* ((value-parser (map-parser (type-token :number) #'token-value))
+         (operator-parser (return-parser (lambda (left right)
+                                           (+ left right))))
+         (tokens (vector (make-token :type :number :text "1" :value 1)))
+         (parser (chainl1 value-parser operator-parser)))
+    (assert-combinator-failure (parse-tokens parser tokens) (value next failure)
+      (assert-equal 1 next)
+      (assert-equal :progressing-parser (parse-failure-expected failure))
+      (assert-equal :return (parser-name (parse-failure-actual failure))))))
+
+(deftest-case combinator-chainr1-propagates-missing-right-operand-test
+  (let* ((tokens (vector (make-token :type :number :text "2" :value 2)
+                         (make-token :type :caret :text "^")))
+         (value-parser (map-parser (type-token :number) #'token-value))
+         (operator-parser
+           (operator-parser (type-token :caret)
+                            (lambda (left right)
+                              (expt left right))))
+         (parser (chainr1 value-parser operator-parser)))
+    (multiple-value-bind (ok value next failure)
+        (parse-tokens parser tokens)
+      (assert-false ok)
+      (assert-false value)
+      (assert-equal 2 next)
+      (assert-equal 2 (parse-failure-position failure))
+      (assert-equal :number (parse-failure-expected failure))
+      (assert-equal :eof (parse-failure-actual failure)))))
+
+(deftest-case combinator-chainr1-rejects-non-advancing-operator-test
+  (let* ((value-parser (map-parser (type-token :number) #'token-value))
+         (operator-parser (return-parser (lambda (left right)
+                                           (+ left right))))
+         (tokens (vector (make-token :type :number :text "1" :value 1)))
+         (parser (chainr1 value-parser operator-parser)))
+    (assert-combinator-failure (parse-tokens parser tokens) (value next failure)
+      (assert-equal 1 next)
+      (assert-equal :progressing-parser (parse-failure-expected failure))
+      (assert-equal :return (parser-name (parse-failure-actual failure))))))

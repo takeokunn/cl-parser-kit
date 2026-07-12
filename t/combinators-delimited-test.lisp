@@ -1,0 +1,191 @@
+(in-package :cl-parser-kit/test)
+
+(deftest-case combinator-between-test
+  (with-combinator-tokens
+      (tokens '((:type :lparen :text "(")
+                (:type :identifier :text "foo")
+                (:type :rparen :text ")")))
+    (let ((parser (between (type-token :lparen)
+                           (type-token :identifier)
+                           (type-token :rparen))))
+      (assert-combinator-values (parse-tokens parser tokens)
+          (ok value next failure)
+        (declare (ignore failure))
+        (assert-true ok)
+        (assert-equal 3 next)
+        (assert-equal :identifier (token-type value))
+        (assert-equal "foo" (token-text value))))))
+
+(deftest-case combinator-type-token-projection-helpers-test
+  (with-combinator-tokens
+      (tokens '((:type :identifier :text "answer")
+                (:type :number :text "42" :value 42)))
+    (let ((text-parser (type-token-text :identifier))
+          (value-parser (type-token-value :number)))
+      (assert-combinator-values (parse-tokens text-parser tokens)
+          (ok value next failure)
+        (declare (ignore failure))
+        (assert-true ok)
+        (assert-equal "answer" value)
+        (assert-equal 1 next))
+      (assert-combinator-values (run-parser value-parser tokens 1)
+          (ok value next failure)
+        (declare (ignore failure))
+        (assert-true ok)
+        (assert-equal 42 value)
+        (assert-equal 2 next)))))
+
+(deftest-case combinator-literal-projection-helpers-test
+  (with-combinator-tokens
+      (tokens '((:type :keyword :text "let" :value :let)
+                (:type :operator :text "=" :value :assign)))
+    (let ((text-parser (literal-text "let" :type :keyword))
+          (value-parser (literal-value "=" :type :operator)))
+      (assert-combinator-values (parse-tokens text-parser tokens)
+          (ok value next failure)
+        (declare (ignore failure))
+        (assert-true ok)
+        (assert-equal "let" value)
+        (assert-equal 1 next))
+      (assert-combinator-values (run-parser value-parser tokens 1)
+          (ok value next failure)
+        (declare (ignore failure))
+        (assert-true ok)
+        (assert-equal :assign value)
+        (assert-equal 2 next)))))
+
+(deftest-case combinator-preceded-by-test
+  (with-combinator-tokens
+      (tokens '((:type :let :text "let")
+                (:type :identifier :text "answer")))
+    (let ((parser (preceded-by (type-token :let)
+                               (type-token :identifier))))
+      (assert-combinator-success (parse-tokens parser tokens)
+          (ok value next failure)
+        (declare (ignore failure))
+        (assert-true ok)
+        (assert-equal 2 next)
+        (assert-equal :identifier (token-type value))
+        (assert-equal "answer" (token-text value))))))
+
+(deftest-case combinator-preceded-by-propagates-inner-failure-test
+  (with-combinator-tokens (tokens '((:type :let :text "let")))
+    (let ((parser (preceded-by (type-token :let)
+                               (type-token :identifier))))
+      (assert-combinator-failure (parse-tokens parser tokens) (ok value next failure)
+        (assert-false ok)
+        (assert-false value)
+        (assert-equal 1 next)
+        (assert-equal 1 (parse-failure-position failure))
+        (assert-equal :identifier (parse-failure-expected failure))
+        (assert-equal :eof (parse-failure-actual failure))))))
+
+(deftest-case combinator-terminated-by-test
+  (with-combinator-tokens
+      (tokens '((:type :identifier :text "answer")
+                (:type :semicolon :text ";")))
+    (let ((parser (terminated-by (type-token :identifier)
+                                 (type-token :semicolon))))
+      (assert-combinator-success (parse-tokens parser tokens)
+          (ok value next failure)
+        (declare (ignore failure))
+        (assert-true ok)
+        (assert-equal 2 next)
+        (assert-equal :identifier (token-type value))
+        (assert-equal "answer" (token-text value))))))
+
+(deftest-case combinator-terminated-by-preserves-success-diagnostics-test
+  (with-combinator-tokens (tokens *positioned-identifier-semicolon-token-specs*)
+    (let ((parser (terminated-by (map-parser (seq (type-token :identifier)
+                                                  (opt (lookahead (end-of-input))))
+                                             #'first)
+                                 (type-token :semicolon))))
+      (multiple-value-bind (ok value next diagnostics)
+          (run-parser parser tokens 0)
+        (assert-true ok)
+        (assert-equal :identifier (token-type value))
+        (assert-equal 2 next)
+        (%assert-rendered-diagnostic-contains (first diagnostics)
+                                              "Unexpected trailing token"
+                                              "1:7-1:8")))))
+
+(deftest-case combinator-terminated-by-propagates-suffix-failure-test
+  (with-combinator-tokens (tokens '((:type :identifier :text "answer")))
+    (let ((parser (terminated-by (type-token :identifier)
+                                 (type-token :semicolon))))
+      (assert-combinator-failure (parse-tokens parser tokens) (ok value next failure)
+        (assert-false ok)
+        (assert-false value)
+        (assert-equal 1 next)
+        (assert-equal 1 (parse-failure-position failure))
+        (assert-equal :semicolon (parse-failure-expected failure))
+        (assert-equal :eof (parse-failure-actual failure))))))
+
+(deftest-case combinator-delimited-sep-by1-test
+  (with-combinator-tokens (tokens *paren-identifier-comma-identifier-token-specs*)
+    (let ((parser (delimited-sep-by1 (type-token :lparen)
+                                     (type-token :identifier)
+                                     (type-token :comma)
+                                     (type-token :rparen))))
+      (assert-combinator-projected-values (parse-tokens parser tokens)
+          (ok value next failure)
+          5
+          '("foo" "bar")
+          #'token-text))))
+
+(deftest-case combinator-delimited-sep-by-allows-empty-body-test
+  (with-combinator-tokens
+      (tokens '((:type :lparen :text "(")
+                (:type :rparen :text ")")))
+    (let ((parser (delimited-sep-by (type-token :lparen)
+                                    (type-token :identifier)
+                                    (type-token :comma)
+                                    (type-token :rparen))))
+      (assert-combinator-success (parse-tokens parser tokens)
+          (ok value next failure)
+        (declare (ignore failure))
+        (assert-true ok)
+        (assert-equal '() value)
+        (assert-equal 2 next)))))
+
+(deftest-case combinator-delimited-sep-by1-propagates-trailing-separator-failure-test
+  (with-combinator-tokens (tokens *paren-identifier-comma-rparen-token-specs*)
+    (let ((parser (delimited-sep-by1 (type-token :lparen)
+                                     (type-token :identifier)
+                                     (type-token :comma)
+                                     (type-token :rparen))))
+      (assert-combinator-failure (parse-tokens parser tokens) (ok value next failure)
+        (assert-false ok)
+        (assert-false value)
+        (assert-equal 3 next)
+        (assert-equal 3 (parse-failure-position failure))
+        (assert-equal :identifier (parse-failure-expected failure))
+        (assert-equal :rparen (token-type (parse-failure-actual failure)))))))
+
+(deftest-case combinator-delimited-sep-end-by1-allows-trailing-separator-before-close-test
+  (with-combinator-tokens
+      (tokens *paren-identifier-comma-identifier-comma-rparen-token-specs*)
+    (let ((parser (delimited-sep-end-by1 (type-token :lparen)
+                                         (type-token :identifier)
+                                         (type-token :comma)
+                                         (type-token :rparen))))
+      (assert-combinator-projected-values (parse-tokens parser tokens)
+          (ok value next failure)
+          6
+          '("foo" "bar")
+          #'token-text))))
+
+(deftest-case combinator-delimited-sep-end-by-allows-empty-body-test
+  (with-combinator-tokens
+      (tokens '((:type :lparen :text "(")
+                (:type :rparen :text ")")))
+    (let ((parser (delimited-sep-end-by (type-token :lparen)
+                                        (type-token :identifier)
+                                        (type-token :comma)
+                                        (type-token :rparen))))
+      (assert-combinator-success (parse-tokens parser tokens)
+          (ok value next failure)
+        (declare (ignore failure))
+        (assert-true ok)
+        (assert-equal '() value)
+        (assert-equal 2 next)))))
