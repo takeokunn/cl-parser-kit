@@ -1,0 +1,25 @@
+(in-package :cl-user)
+
+;; Example Pratt setup for `1 + 2!`.
+
+(defun parse-postfix-precedence-example ()
+  (let* ((table (cl-parser-kit:make-pratt-table))
+         (tokens (vector (cl-parser-kit:make-token :type :number :text "1" :value 1)
+                         (cl-parser-kit:make-token :type :plus :text "+")
+                         (cl-parser-kit:make-token :type :number :text "2" :value 2)
+                         (cl-parser-kit:make-token :type :bang :text "!"))))
+    (labels ((number-nud (token stream next current-table)
+               (declare (ignore stream current-table))
+               (values t (cl-parser-kit:token-value token) next nil))
+             (plus-led (left op right next current-table)
+               (declare (ignore op current-table))
+               (values t (list :add left right) next nil))
+             (bang-led (left op stream next current-table)
+               (declare (ignore op stream current-table))
+               (values t (list :fact left) next nil)))
+      (cl-parser-kit:register-prefix-operator table :number 0 #'number-nud)
+      (cl-parser-kit:register-infix-operator table :plus 10 11 #'plus-led)
+      (cl-parser-kit:register-postfix-operator table :bang 30 #'bang-led)
+      (cl-parser-kit:parse-pratt-all tokens table))))
+
+;; (parse-postfix-precedence-example)
