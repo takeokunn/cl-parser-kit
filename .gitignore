@@ -1,0 +1,7 @@
+*.fasl
+/.cl-parser-kit/
+/.claude/
+/.serena/
+*.paredit-tmp-*
+/t/.tokenizer-test-forms.lisp
+/t/.tokenizer-test-partial.lisp
