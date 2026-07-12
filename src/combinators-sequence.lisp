@@ -1,0 +1,179 @@
+(in-package :cl-parser-kit)
+
+(defun %recoverable-success (value position diagnostics failure)
+  (if (or (%progress-failure-p failure)
+          (parse-failure-committed-p failure))
+      (%failure-from failure)
+      (%success value
+                position
+                (%merge-diagnostics diagnostics
+                                    (parse-failure-diagnostics failure)))))
+
+(defun %collect-many/cps (parser input current values diagnostics)
+  (%run-progressing-parser/cps
+   parser input current
+   (lambda (value next result)
+     (%collect-many/cps parser input next (cons value values)
+                        (%merge-diagnostics diagnostics result)))
+   (lambda (failure)
+     (%recoverable-success (nreverse values)
+                           current
+                           diagnostics
+                           failure))))
+
+(defun %run-parser-or-recoverable (parser input position fallback-value)
+  (multiple-value-bind (ok value next result)
+      (run-parser parser input position)
+    (if ok
+        (%success value next result)
+        (%recoverable-success fallback-value position nil result))))
+
+(defmacro define-separated-parser (name &rest options)
+  (let ((parser-name (intern (symbol-name name) :keyword)))
+    `(defun ,name (parser separator)
+       (%make-separated-parser ,parser-name parser separator
+                               ,@options))))
+
+(define-parser-function many (parser) :many
+  (%collect-many/cps parser input position '() '()))
+
+(defun many1 (parser)
+  (bind-parser parser
+               (lambda (first)
+                 (map-parser (many parser)
+                             (lambda (rest)
+                               (cons first rest))))))
+
+(defmacro define-chain-parser (name recursion-style)
+  (let ((parser-name (intern (symbol-name name) :keyword)))
+    (ecase recursion-style
+      (:left
+       `(defun ,name (parser operator)
+          (make-parser
+           :name ,parser-name
+           :fn (lambda (input position)
+                 (labels ((continue-chain (accumulator current diagnostics)
+                            (%run-progressing-parser/cps
+                             operator input current
+                             (lambda (operator-value operator-next operator-result)
+                               (%run-progressing-parser/cps
+                                parser input operator-next
+                                (lambda (item-value item-next item-result)
+                                  (continue-chain
+                                   (funcall operator-value accumulator item-value)
+                                   item-next
+                                   (%merge-diagnostics diagnostics
+                                                       operator-result
+                                                       item-result)))
+                                (lambda (item-failure)
+                                  (%committed-failure-from item-failure))))
+                             (lambda (operator-failure)
+                               (%recoverable-success accumulator
+                                                     current
+                                                     diagnostics
+                                                     operator-failure)))))
+                   (%run-progressing-parser/cps
+                    parser input position
+                    (lambda (value next result)
+                      (continue-chain value next result))
+                    #'%failure-from))))))
+      (:right
+       `(defun ,name (parser operator)
+          (make-parser
+           :name ,parser-name
+           :fn (lambda (input position)
+                 (labels ((parse-chain (current-position)
+                            (%run-progressing-parser/cps
+                             parser input current-position
+                             (lambda (value next result)
+                               (%run-progressing-parser/cps
+                                operator input next
+                                (lambda (operator-value operator-next operator-result)
+                                  (multiple-value-bind (right-ok right-value right-next right-result)
+                                      (parse-chain operator-next)
+                                    (if right-ok
+                                        (%success (funcall operator-value value right-value)
+                                                  right-next
+                                                  (%merge-diagnostics result
+                                                                      operator-result
+                                                                      right-result))
+                                        (%committed-failure-from right-result))))
+                                (lambda (operator-failure)
+                                  (%recoverable-success value
+                                                        next
+                                                        result
+                                                        operator-failure))))
+                             #'%failure-from)))
+                   (parse-chain position)))))))))
+
+(define-chain-parser chainl1 :left)
+(define-chain-parser chainr1 :right)
+
+(defun %collect-separated-items/cps (parser separator input current values diagnostics
+                                    on-item-failure)
+  (%run-progressing-parser/cps
+   separator input current
+   (lambda (_separator-value separator-next separator-result)
+     (declare (ignore _separator-value))
+     (%run-progressing-parser/cps
+      parser input separator-next
+      (lambda (item-value item-next item-result)
+        (%collect-separated-items/cps parser separator input item-next
+                                      (cons item-value values)
+                                      (%merge-diagnostics diagnostics
+                                                          separator-result
+                                                          item-result)
+                                      on-item-failure))
+      (lambda (item-failure)
+        (funcall on-item-failure values
+                 current
+                 diagnostics
+                 separator-next
+                 separator-result
+                 item-failure))))
+   (lambda (separator-failure)
+     (%recoverable-success (nreverse values)
+                           current
+                           diagnostics
+                           separator-failure))))
+
+(defun %make-separated-parser (name parser separator
+                               &key allow-empty-p final-item-failure-recoverable-p)
+  (make-parser
+   :name name
+   :fn (lambda (input position)
+         (%run-progressing-parser/cps
+          parser input position
+          (lambda (value next result)
+            (%collect-separated-items/cps
+             parser separator input next (list value) result
+             (lambda (values current diagnostics separator-next separator-result item-failure)
+               (declare (ignore current))
+               (if final-item-failure-recoverable-p
+                   (%recoverable-success (nreverse values)
+                                         separator-next
+                                         (%merge-diagnostics diagnostics
+                                                             separator-result)
+                                         item-failure)
+                   (%committed-failure-from item-failure)))))
+          (if allow-empty-p
+              (lambda (failure)
+                (%recoverable-success '() position nil failure))
+              #'%failure-from)))))
+
+(define-separated-parser sep-by1
+  :final-item-failure-recoverable-p nil)
+
+(define-separated-parser sep-by
+  :allow-empty-p t
+  :final-item-failure-recoverable-p nil)
+
+(define-separated-parser sep-end-by1
+  :final-item-failure-recoverable-p t)
+
+(define-separated-parser sep-end-by
+  :allow-empty-p t
+  :final-item-failure-recoverable-p t)
+
+(define-parser-function opt (parser) :opt
+  (%run-parser-or-recoverable parser input position nil))
