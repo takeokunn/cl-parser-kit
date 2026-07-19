@@ -12,7 +12,9 @@
     (values t (- end index) text value)))
 
 (defun %scan-while (source index predicate)
+  (declare (type string source) (type fixnum index) (optimize (speed 2) (safety 1)))
   (let ((length (length source)))
+    (declare (type fixnum length))
     (loop while (< index length)
           while (funcall predicate (char source index))
           do (incf index)
@@ -88,6 +90,21 @@
                  (%scan-while source (1+ index) continue-predicate))
                #'identity))))
 
+(defun %parse-decimal-text (text)
+  "Parse a well-formed decimal run (as produced by the number scanner) without
+using the Lisp reader. Feeding untrusted text to READ-FROM-STRING would intern
+malformed runs as permanent symbols (an unbounded-memory DoS), so lexing is done
+with PARSE-INTEGER only."
+  (let ((dot (position #\. text)))
+    (if dot
+        (let ((integer-part (parse-integer text :end dot))
+              (fraction-text (subseq text (1+ dot))))
+          (coerce (+ integer-part
+                     (/ (parse-integer fraction-text)
+                        (expt 10 (length fraction-text))))
+                  'single-float))
+        (parse-integer text))))
+
 (defun make-number-rule (&key (type :number) skip-p)
   (make-token-rule
    :type type
@@ -98,15 +115,21 @@
                #'digit-char-p
                (lambda (source index)
                  (let ((length (length source)))
+                   ;; Accept at most one interior decimal point so a hostile run
+                   ;; like "1.2.3.4" tokenizes as separate numbers rather than a
+                   ;; single malformed lexeme.
                    (loop with end = (1+ index)
+                         with seen-dot = nil
                          while (< end length)
                          do (let ((char (char source end)))
-                              (unless (or (digit-char-p char)
-                                          (and (char= char #\.)
-                                               (< (1+ end) length)
-                                               (digit-char-p (char source (1+ end)))))
-                                (loop-finish))
-                              (incf end))
+                              (cond
+                                ((digit-char-p char) (incf end))
+                                ((and (char= char #\.)
+                                      (not seen-dot)
+                                      (< (1+ end) length)
+                                      (digit-char-p (char source (1+ end))))
+                                 (setf seen-dot t)
+                                 (incf end))
+                                (t (loop-finish))))
                          finally (return end))))
-               (lambda (text)
-                 (read-from-string text))))))
+               #'%parse-decimal-text))))

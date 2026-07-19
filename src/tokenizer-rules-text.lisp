@@ -38,9 +38,13 @@
       (length source)))
 
 (defun %block-comment-end (source start delimiter)
+  ;; An unterminated block comment consumes the rest of the source, mirroring
+  ;; %line-comment-end. Returning NIL here would crash %emit-token-match on
+  ;; untrusted input that opens a comment without closing it.
   (let ((closing (search delimiter source :start2 start)))
-    (when closing
-      (+ closing (length delimiter)))))
+    (if closing
+        (+ closing (length delimiter))
+        (length source))))
 
 (defun %make-prefixed-comment-rule (type skip-p value-function prefix end-fn)
   (make-token-rule

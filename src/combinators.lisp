@@ -24,10 +24,10 @@
   (values t value position diagnostics))
 
 (defun %merge-diagnostics (&rest diagnostics-lists)
-  (let ((diagnostics
-          (apply #'append
-                 (mapcar #'ensure-list diagnostics-lists))))
-    (and diagnostics diagnostics)))
+  ;; The success path carries no diagnostics the vast majority of the time, so
+  ;; skip the mapcar/append allocation entirely when every argument is empty.
+  (when (some #'identity diagnostics-lists)
+    (apply #'append (mapcar #'ensure-list diagnostics-lists))))
 
 (defun %failure (position expected &optional actual diagnostics committed-p)
   (values nil
