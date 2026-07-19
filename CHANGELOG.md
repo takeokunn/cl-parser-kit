@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+- fixed a silent error-swallowing bug in `bind-parser` (the foundation of
+  `preceded-by`, `terminated-by`, `between`, and the `delimited-sep-by*`
+  wrappers): once the leading parser consumed input, a failing trailing parser
+  was reported as a non-committed failure, so a surrounding
+  `opt`/`many`/`sep-by`/`alt` backtracked past the half-consumed construct and
+  dropped the grammar error. It now promotes the failure to committed, matching
+  `seq`
+- hardened the combinator engine against untrusted input with
+  `*maximum-parser-recursion-depth*` (default 4000, checked in `run-parser` and
+  in `chainr1`'s own right-recursion), so deeply nested grammars return a
+  `:maximum-recursion-depth` failure instead of exhausting the control stack
+- added tokenizer resource limits `*maximum-tokenizer-source-length*` and
+  `*maximum-tokenizer-tokens*`, which signal the exported
+  `tokenizer-resource-limit-exceeded` condition instead of exhausting memory on
+  an adversarially large or token-dense source
+- bounded numeric scanning with `*maximum-number-lexeme-length*` (default 1024)
+  so a multi-million-digit run cannot force superlinear bignum work; excess
+  digits gracefully start a new token
+- bounded diagnostic rendering with `*maximum-diagnostic-line-length*` (default
+  400) so a single pathological source line (e.g. a minified file) cannot make
+  one `diagnostic->string` call allocate proportional to that line's full length
+- fixed `span-merge` to derive start/end line and column from whichever argument
+  actually has the smallest start / largest end offset, so merging two spans out
+  of source order no longer produces an internally inconsistent span
+- fixed `%make-offset-span` normalization so a token whose raw start/end are both
+  negative no longer normalizes to an inverted span
 - upgraded the test-only dependencies to their latest releases (cl-weave
   `v0.8.0`, cl-prolog `v0.6.0`) and migrated to cl-weave's string-named test
   registration API

@@ -62,6 +62,19 @@ for languages whose identifiers allow sigils or suffix markers. When reserved
 words should respect that same custom alphabet, pass the matching
 `identifier-char-predicate` to `make-keyword-rule`.
 
+- `tokenize` rejects a source longer than `*maximum-tokenizer-source-length*`
+  and stops once it has emitted `*maximum-tokenizer-tokens*` tokens, both by
+  signaling `tokenizer-resource-limit-exceeded` (accessors
+  `tokenizer-resource-limit-exceeded-kind`,
+  `tokenizer-resource-limit-exceeded-value`,
+  `tokenizer-resource-limit-exceeded-limit`) instead of exhausting memory;
+  rebind either limit for intentionally large inputs
+- `make-number-rule` caps a single numeric lexeme at
+  `*maximum-number-lexeme-length*` characters so an adversarially long digit
+  run cannot force multi-megabyte bignum arithmetic; the scanner simply stops
+  there and the remaining digits start a new number token, the same graceful
+  split already used for a stray interior `.`
+
 ## Diagnostics
 
 Diagnostics and parse failures preserve structured error data.
@@ -90,6 +103,11 @@ Diagnostics and parse failures preserve structured error data.
 - if that fallback path also has plist-style `(:source <string>)` in
   `token-metadata`, the synthesized diagnostic span includes reconstructed
   line/column positions and a renderable source excerpt
+- `diagnostic->string` caps the rendered source excerpt and caret
+  padding/width at `*maximum-diagnostic-line-length*` characters (appending an
+  ellipsis when truncated), so a single pathological line -- a minified file
+  with no line breaks, or a span far into an adversarially long line -- can't
+  make one diagnostic allocate output proportional to that line's full length
 
 - [`examples/diagnostic-example.lisp`](./examples/diagnostic-example.lisp)
 - [`examples/external-token-diagnostic-example.lisp`](./examples/external-token-diagnostic-example.lisp)
@@ -145,6 +163,12 @@ failure object on error.
   intended for `chainl1` / `chainr1` operator parsers that should ignore the
   matched token and return a binary combiner function
 - `(alt)` is defined and fails cleanly with `:alternative` instead of signaling
+- large or deeply nested input is bounded by `*maximum-parser-recursion-depth*`:
+  every combinator invokes its sub-parsers through `run-parser`, so once
+  recursion (grammar nesting depth, or the length of a `chainr1` chain)
+  exceeds it, parsing returns a `:maximum-recursion-depth` failure instead of
+  exhausting the control stack; rebind it for intentionally large or deep
+  grammars
 
 Example:
 
@@ -236,9 +260,10 @@ If you are new to the library, start here:
    For left- or right-associative operator chains outside Pratt parsing,
    start with `chainl1` or `chainr1`; pair them with `operator-parser` when
    the operator token itself does not carry semantic payload. `chainr1`
-   recurses in step with the right-associative nesting depth, so for input
-   that may be adversarially deep prefer `parse-pratt`, whose depth is bounded
-   by `*maximum-pratt-recursion-depth*`.
+   recurses in step with the right-associative nesting depth; like the rest
+   of the combinator engine, that depth is bounded by
+   `*maximum-parser-recursion-depth*`, so adversarially deep input fails
+   gracefully instead of exhausting the control stack.
 3. use `parse-tokens`, `parse-all`, or `parse-source` for end-to-end parsing
 4. move to `parse-pratt`, `parse-pratt-all`, or `parse-pratt-source`
    when expression precedence matters

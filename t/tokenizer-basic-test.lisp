@@ -20,3 +20,41 @@
                                        :value #\?
                                        :text "?"
                                        :span '(2 1 2 2))))))
+
+;;; Resource-limit guards (security hardening): TOKENIZE bounds source length
+;;; and emitted-token count, and the number rule bounds a single lexeme, so
+;;; hostile input fails gracefully instead of exhausting memory or CPU.
+
+(it-sequential "tokenizer-source-length-limit-signals-resource-error-test"
+  (let ((*maximum-tokenizer-source-length* 10))
+    (expect (lambda ()
+              (tokenize (make-string 11 :initial-element #\a)
+                       (make-tokenizer :rules (%basic-tokenizer-rules))))
+            :to-throw 'tokenizer-resource-limit-exceeded)))
+
+(it-sequential "tokenizer-source-length-limit-allows-input-within-limit-test"
+  (let ((*maximum-tokenizer-source-length* 10))
+    (expect (tokenize (make-string 10 :initial-element #\a)
+                      (make-tokenizer :rules (%basic-tokenizer-rules)))
+            :to-satisfy (lambda (tokens) (= (length tokens) 1)))))
+
+(it-sequential "tokenizer-token-count-limit-signals-resource-error-test"
+  (let ((*maximum-tokenizer-tokens* 5))
+    (expect (lambda ()
+              (tokenize (format nil "~{~A~^ ~}" (loop repeat 10 collect "x"))
+                       (make-tokenizer :rules (%basic-tokenizer-rules))))
+            :to-throw 'tokenizer-resource-limit-exceeded)))
+
+(it-sequential "tokenizer-token-count-limit-allows-input-within-limit-test"
+  (let ((*maximum-tokenizer-tokens* 5))
+    (expect (tokenize (format nil "~{~A~^ ~}" (loop repeat 5 collect "x"))
+                      (make-tokenizer :rules (%basic-tokenizer-rules)))
+            :to-satisfy (lambda (tokens) (= (length tokens) 5)))))
+
+(it-sequential "number-rule-lexeme-length-limit-splits-hostile-digit-run-test"
+  (let* ((*maximum-number-lexeme-length* 5)
+         (tokenizer (make-tokenizer :rules (list (make-number-rule))))
+         (tokens (tokenize (make-string 12 :initial-element #\9) tokenizer)))
+    (expect (length tokens) :to-equal 3)
+    (expect (map 'list #'token-text tokens)
+            :to-equal '("99999" "99999" "99"))))

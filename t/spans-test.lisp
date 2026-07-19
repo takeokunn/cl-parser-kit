@@ -7,6 +7,21 @@
       (expect (span-start merged) :to-equal 0)
       (expect (span-end merged) :to-equal 6))))
 
+(it-sequential "span-merge-derives-line-column-from-offset-not-argument-order-test"
+  ;; SPAN-MERGE must pick start-line/column and end-line/column from whichever
+  ;; argument actually has the smaller start / larger end offset, not from
+  ;; positional LEFT/RIGHT order, otherwise merging two out-of-order spans
+  ;; produces a self-contradictory span (e.g. end-line before start-line).
+  (let ((earlier (make-span :start 0 :end 3 :start-line 1 :start-column 1 :end-line 1 :end-column 4))
+        (later (make-span :start 10 :end 13 :start-line 2 :start-column 1 :end-line 2 :end-column 4)))
+    (let ((merged (span-merge later earlier)))
+      (expect (span-start merged) :to-equal 0)
+      (expect (span-end merged) :to-equal 13)
+      (expect (span-start-line merged) :to-equal 1)
+      (expect (span-start-column merged) :to-equal 1)
+      (expect (span-end-line merged) :to-equal 2)
+      (expect (span-end-column merged) :to-equal 4))))
+
 (it-sequential "span-length-and-empty-test"
   (let ((empty (make-span :start 3 :end 3))
         (non-empty (make-span :start 2 :end 5)))

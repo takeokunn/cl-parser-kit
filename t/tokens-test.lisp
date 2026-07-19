@@ -31,3 +31,14 @@
     (expect (span-start-column span) :to-equal 5)
     (expect (span-end-line span) :to-equal 1)
     (expect (span-end-column span) :to-equal 9)))
+
+(it-sequential "make-token-normalizes-negative-offsets-without-inverting-span-test"
+  ;; A malformed external token (see TOKEN-METADATA's :SOURCE convention for
+  ;; foreign token pipelines) may carry a negative START whose paired END is
+  ;; also negative but numerically larger; the derived span must still have
+  ;; END >= START >= 0 instead of silently inverting.
+  (let* ((token (make-token :type :bogus :start -5 :end -2))
+         (span (token-span token)))
+    (expect (span-start span) :to-equal 0)
+    (expect (span-end span) :to-equal 0)
+    (expect (>= (span-end span) (span-start span)) :to-be-truthy)))

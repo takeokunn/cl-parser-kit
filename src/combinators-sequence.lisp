@@ -82,28 +82,38 @@
           (make-parser
            :name ,parser-name
            :fn (lambda (input position)
+                 ;; CHAINR1's right-recursion calls PARSE-CHAIN directly
+                 ;; instead of routing back through RUN-PARSER (its result is
+                 ;; consumed by the enclosing MULTIPLE-VALUE-BIND, so it is
+                 ;; not a tail call and the RUN-PARSER depth guard never
+                 ;; sees it), so it needs its own explicit check against the
+                 ;; same *PARSER-RECURSION-DEPTH* counter.
                  (labels ((parse-chain (current-position)
-                            (%run-progressing-parser/cps
-                             parser input current-position
-                             (lambda (value next result)
-                               (%run-progressing-parser/cps
-                                operator input next
-                                (lambda (operator-value operator-next operator-result)
-                                  (multiple-value-bind (right-ok right-value right-next right-result)
-                                      (parse-chain operator-next)
-                                    (if right-ok
-                                        (%success (funcall operator-value value right-value)
-                                                  right-next
-                                                  (%merge-diagnostics result
-                                                                      operator-result
-                                                                      right-result))
-                                        (%committed-failure-from right-result))))
-                                (lambda (operator-failure)
-                                  (%recoverable-success value
-                                                        next
-                                                        result
-                                                        operator-failure))))
-                             #'%failure-from)))
+                            (if (>= *parser-recursion-depth* *maximum-parser-recursion-depth*)
+                                (values nil nil current-position
+                                        (%recursion-depth-exceeded-failure current-position))
+                                (let ((*parser-recursion-depth* (1+ *parser-recursion-depth*)))
+                                  (%run-progressing-parser/cps
+                                   parser input current-position
+                                   (lambda (value next result)
+                                     (%run-progressing-parser/cps
+                                      operator input next
+                                      (lambda (operator-value operator-next operator-result)
+                                        (multiple-value-bind (right-ok right-value right-next right-result)
+                                            (parse-chain operator-next)
+                                          (if right-ok
+                                              (%success (funcall operator-value value right-value)
+                                                        right-next
+                                                        (%merge-diagnostics result
+                                                                            operator-result
+                                                                            right-result))
+                                              (%committed-failure-from right-result))))
+                                      (lambda (operator-failure)
+                                        (%recoverable-success value
+                                                              next
+                                                              result
+                                                              operator-failure))))
+                                   #'%failure-from)))))
                    (parse-chain position)))))))))
 
 (define-chain-parser chainl1 :left)

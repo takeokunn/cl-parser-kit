@@ -18,8 +18,13 @@
          (getf metadata :source))))
 
 (defun %make-offset-span (start end &key source)
-  (let ((normalized-start (max 0 start))
-        (normalized-end (max start end)))
+  ;; NORMALIZED-END must be clamped against NORMALIZED-START, not the raw
+  ;; (possibly negative) START -- otherwise a negative START with an END that
+  ;; is negative but numerically larger (e.g. START -5, END -2) normalizes to
+  ;; START 0 / END -2, an inverted span. Untrusted external tokens (see
+  ;; TOKEN-METADATA's :SOURCE convention) may carry arbitrary START/END.
+  (let* ((normalized-start (max 0 start))
+         (normalized-end (max normalized-start end)))
     (if source
         (let* ((source-length (length source))
                (clamped-start (min normalized-start source-length))

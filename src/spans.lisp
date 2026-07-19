@@ -19,10 +19,17 @@
   (zerop (span-length span)))
 
 (defun span-merge (left right)
-  (make-span :source (or (span-source left) (span-source right))
-             :start (min (span-start left) (span-start right))
-             :end (max (span-end left) (span-end right))
-             :start-line (span-start-line left)
-             :start-column (span-start-column left)
-             :end-line (span-end-line right)
-             :end-column (span-end-column right)))
+  ;; Choose start-line/column and end-line/column from whichever argument
+  ;; actually has the smaller START / larger END offset, instead of trusting
+  ;; LEFT/RIGHT to already be in source order. Otherwise a caller merging two
+  ;; spans out of source order gets an internally inconsistent span (offsets
+  ;; correct via MIN/MAX, but end-line before start-line).
+  (let ((start-span (if (<= (span-start left) (span-start right)) left right))
+        (end-span (if (>= (span-end left) (span-end right)) left right)))
+    (make-span :source (or (span-source left) (span-source right))
+               :start (span-start start-span)
+               :end (span-end end-span)
+               :start-line (span-start-line start-span)
+               :start-column (span-start-column start-span)
+               :end-line (span-end-line end-span)
+               :end-column (span-end-column end-span))))

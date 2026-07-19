@@ -62,7 +62,13 @@
    :matcher (lambda (source index)
               (let ((end (%scan-while source index #'char-whitespace-p)))
                 (when (> end index)
-                  (%emit-token-match source index end (%trim-range source index end)))))))
+                  ;; The tokenizer never reads TEXT/VALUE for a skipped match
+                  ;; (see %TOKENIZE-RULE-MATCH), so a skipped run of
+                  ;; whitespace -- usually the bulk of the source -- avoids
+                  ;; both the %STRING-RANGE and %TRIM-RANGE subseq copies.
+                  (if skip-p
+                      (values t (- end index) nil nil)
+                      (%emit-token-match source index end (%trim-range source index end))))))))
 
 (defun make-predicate-rule (type predicate &key (min-length 1) skip-p (value-function #'identity))
   (make-token-rule
@@ -71,9 +77,11 @@
    :matcher (lambda (source index)
               (let ((end (%scan-while source index predicate)))
                 (when (>= (- end index) min-length)
-                  (%emit-token-match source index end
-                                     (funcall value-function
-                                              (%string-range source index end))))))))
+                  (if skip-p
+                      (values t (- end index) nil nil)
+                      (%emit-token-match source index end
+                                         (funcall value-function
+                                                  (%string-range source index end)))))))))
 
 (defun make-identifier-rule (&key (type :identifier)
                                   skip-p
@@ -89,6 +97,16 @@
                (lambda (source index)
                  (%scan-while source (1+ index) continue-predicate))
                #'identity))))
+
+(defparameter *maximum-number-lexeme-length* 1024
+  "Maximum character length MAKE-NUMBER-RULE scans for a single numeric
+lexeme. Without a cap, a hostile run of digits (e.g. \"0.\" followed by
+millions of nines) makes %PARSE-DECIMAL-TEXT build and divide multi-megabyte
+bignums for what looks like one short token -- a CPU/memory DoS distinct from
+the reader-avoidance below. The scanner simply stops at the cap, so any
+remaining digits start a new number token, the same graceful split already
+used for a stray interior '.'. Rebind or SETF to raise it for intentionally
+high-precision literals.")
 
 (defun %parse-decimal-text (text)
   "Parse a well-formed decimal run (as produced by the number scanner) without
@@ -120,7 +138,8 @@ with PARSE-INTEGER only."
                    ;; single malformed lexeme.
                    (loop with end = (1+ index)
                          with seen-dot = nil
-                         while (< end length)
+                         while (and (< end length)
+                                    (< (- end index) *maximum-number-lexeme-length*))
                          do (let ((char (char source end)))
                               (cond
                                 ((digit-char-p char) (incf end))

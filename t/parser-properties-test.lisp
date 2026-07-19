@@ -190,3 +190,77 @@
       (expect ok :to-be-truthy)
       (expect (%add-node-count value) :to-equal (1- operands))
       (expect (%leftmost-leaf value) :to-equal 1))))
+
+;;; The combinator engine funnels every sub-parser call through RUN-PARSER, so
+;;; a *MAXIMUM-PARSER-RECURSION-DEPTH* guard there protects both ordinary
+;;; recursive-descent grammars (nested delimiters below) and CHAINR1, whose
+;;; right-recursion bypasses RUN-PARSER and needs its own explicit check
+;;; (security hardening).
+
+(defun %nested-paren-tokens (depth)
+  (coerce (append (loop repeat depth collect (make-token :type :lparen :text "("))
+                  (list (make-token :type :number :text "1" :value 1))
+                  (loop repeat depth collect (make-token :type :rparen :text ")")))
+          'vector))
+
+(defun %nested-expr-parser ()
+  "A hand-written recursive-descent grammar: expr := NUMBER | '(' expr ')'.
+The lazy inner parser re-derives EXPR on every run so recursion happens at
+parse time, one RUN-PARSER call per nesting level, exactly like a real
+consumer's grammar would."
+  (labels ((expr ()
+             (alt (type-token :number)
+                  (between (type-token :lparen)
+                          (make-parser :name :lazy-expr
+                                       :fn (lambda (input position)
+                                             (run-parser (expr) input position)))
+                          (type-token :rparen)))))
+    (expr)))
+
+(it-sequential "combinator-depth-guard-rejects-pathologically-nested-input"
+  ;; A hostile run of nested delimiters must fail gracefully instead of
+  ;; exhausting the control stack.
+  (let ((*maximum-parser-recursion-depth* 1000))
+    (multiple-value-bind (ok value next failure)
+        (parse-tokens (%nested-expr-parser) (%nested-paren-tokens 5000))
+      (declare (ignore value next))
+      (expect ok :to-be-falsy)
+      (expect (parse-failure-expected failure) :to-equal :maximum-recursion-depth))))
+
+(it-sequential "combinator-depth-guard-allows-input-within-limit"
+  (let ((*maximum-parser-recursion-depth* 1000))
+    (multiple-value-bind (ok value next failure)
+        (parse-tokens (%nested-expr-parser) (%nested-paren-tokens 5))
+      (declare (ignore next failure))
+      (expect ok :to-be-truthy)
+      (expect (token-value value) :to-equal 1))))
+
+(defun %operator-chain-tokens (operand-count)
+  (coerce (loop for index below operand-count
+                collect (make-token :type :number :text "1" :value 1)
+                when (< index (1- operand-count))
+                  collect (make-token :type :caret :text "^"))
+          'vector))
+
+(defun %chainr1-parser ()
+  (chainr1 (map-parser (type-token :number) #'token-value)
+          (operator-parser (type-token :caret) (lambda (left right) (list :expt left right)))))
+
+(it-sequential "chainr1-depth-guard-rejects-pathologically-long-chain"
+  ;; CHAINR1's right-recursion is a direct Lisp call, not a tail call (its
+  ;; result feeds MULTIPLE-VALUE-BIND), so it needs its own explicit guard
+  ;; distinct from the general RUN-PARSER check above.
+  (let ((*maximum-parser-recursion-depth* 1000))
+    (multiple-value-bind (ok value next failure)
+        (parse-tokens (%chainr1-parser) (%operator-chain-tokens 5000))
+      (declare (ignore value next))
+      (expect ok :to-be-falsy)
+      (expect (parse-failure-expected failure) :to-equal :maximum-recursion-depth))))
+
+(it-sequential "chainr1-depth-guard-allows-input-within-limit"
+  (let ((*maximum-parser-recursion-depth* 1000))
+    (multiple-value-bind (ok value next failure)
+        (parse-tokens (%chainr1-parser) (%operator-chain-tokens 5))
+      (declare (ignore next failure))
+      (expect ok :to-be-truthy)
+      (expect value :to-equal '(:expt 1 (:expt 1 (:expt 1 (:expt 1 1))))))))

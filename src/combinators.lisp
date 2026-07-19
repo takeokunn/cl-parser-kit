@@ -17,8 +17,32 @@
   name
   fn)
 
+(defparameter *maximum-parser-recursion-depth* 4000
+  "Maximum recursion RUN-PARSER performs before yielding a parse failure
+instead of exhausting the control stack. Every combinator (SEQ, ALT, BETWEEN,
+BIND-PARSER, MAP-PARSER, and any user-composed recursive-descent grammar)
+invokes its sub-parsers through RUN-PARSER, so this bounds hostile input --
+e.g. thousands of nested opening delimiters, or a long chain of CHAINR1
+operators -- so parsing fails gracefully instead of exhausting the control
+stack. Rebind or SETF to raise it for intentionally deep grammars or inputs.")
+
+(defvar *parser-recursion-depth* 0
+  "Current combinator recursion depth; bound dynamically during a parse.")
+
+(defun %recursion-depth-exceeded-failure (position)
+  (make-parse-failure
+   :position position
+   :expected :maximum-recursion-depth
+   :actual nil
+   :diagnostics (list (error-diagnostic
+                       (format nil "Maximum parser recursion depth ~D exceeded"
+                               *maximum-parser-recursion-depth*)))))
+
 (defun run-parser (parser input position)
-  (funcall (parser-fn parser) input position))
+  (if (>= *parser-recursion-depth* *maximum-parser-recursion-depth*)
+      (values nil nil position (%recursion-depth-exceeded-failure position))
+      (let ((*parser-recursion-depth* (1+ *parser-recursion-depth*)))
+        (funcall (parser-fn parser) input position))))
 
 (defun %success (value position &optional diagnostics)
   (values t value position diagnostics))
@@ -99,7 +123,14 @@
            (%success next-value
                      next-position
                      (%merge-diagnostics result next-result))
-           (%failure-from next-result))))))
+           ;; Mirror SEQ: once PARSER has consumed input (NEXT /= POSITION),
+           ;; a later failure must stay committed even if the second parser's
+           ;; own failure is not, otherwise BETWEEN/PRECEDED-BY/TERMINATED-BY
+           ;; (all built on BIND-PARSER) let a surrounding OPT/MANY/ALT
+           ;; silently backtrack past a half-consumed construct.
+           (if (= next position)
+               (%failure-from next-result)
+               (%committed-failure-from next-result)))))))
 
 (define-parser-function satisfies-token (predicate &key expected-name) expected-name
   (let ((tokens (ensure-vector input)))

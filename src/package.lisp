@@ -44,6 +44,13 @@
    #:make-predicate-rule
    #:make-line-comment-rule
    #:make-block-comment-rule
+   #:*maximum-tokenizer-source-length*
+   #:*maximum-tokenizer-tokens*
+   #:*maximum-number-lexeme-length*
+   #:tokenizer-resource-limit-exceeded
+   #:tokenizer-resource-limit-exceeded-kind
+   #:tokenizer-resource-limit-exceeded-value
+   #:tokenizer-resource-limit-exceeded-limit
    ;; diagnostics
    #:diagnostic
    #:make-diagnostic
@@ -70,12 +77,14 @@
    #:parse-failure-committed-p
    #:parse-failure->string
    #:merge-parse-failures
+   #:*maximum-diagnostic-line-length*
    ;; parser combinators
    #:parser
    #:make-parser
    #:parser-name
    #:parser-fn
    #:run-parser
+   #:*maximum-parser-recursion-depth*
    #:parse-source
    #:parse-tokens
    #:parse-all

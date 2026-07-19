@@ -13,6 +13,40 @@
      (diagnostic->string diag)
      '("boom" "2:1-2:3" "bb" "^"))))
 
+(it-sequential "diagnostic-string-truncates-pathologically-long-line-test"
+  ;; A single huge line (a minified file with no line breaks, or a span far
+  ;; into an adversarially long line) must not make rendering one diagnostic
+  ;; allocate output proportional to that line's full length (security
+  ;; hardening).
+  (let* ((*maximum-diagnostic-line-length* 10)
+         (source (make-string 1000 :initial-element #\a))
+         (diag (error-diagnostic "boom"
+                                 :span (make-span :source source
+                                                  :start 0 :end 1
+                                                  :start-line 1 :start-column 1
+                                                  :end-line 1 :end-column 2))))
+    (let ((rendered (diagnostic->string diag)))
+      (expect (search "..." rendered) :to-be-truthy)
+      (expect (< (length rendered) 100) :to-be-truthy))))
+
+(it-sequential "diagnostic-string-rendered-length-independent-of-source-size-test"
+  ;; The default limit alone must keep DIAGNOSTIC->STRING's output bounded
+  ;; for a pathologically large single-line source (a minified file with no
+  ;; line breaks), regardless of how large SOURCE grows.
+  (let ((lengths
+          (mapcar (lambda (source-length)
+                    (let ((diag (error-diagnostic
+                                "boom"
+                                :span (make-span :source (make-string source-length
+                                                                      :initial-element #\a)
+                                                 :start 0 :end 1
+                                                 :start-line 1 :start-column 1
+                                                 :end-line 1 :end-column 2))))
+                      (length (diagnostic->string diag))))
+                  '(1000 500000))))
+    (expect (first lengths) :to-equal (second lengths))
+    (expect (< (first lengths) 1000) :to-be-truthy)))
+
 (it-sequential "parse-failure-string-joins-three-or-more-expected-items-test"
   ;; Exercises the comma-joined branch of the expected-item formatter (2-item
   ;; "X or Y" is covered elsewhere; 3+ items use a distinct code path).

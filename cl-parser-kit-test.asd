@@ -1,5 +1,6 @@
 (asdf:defsystem "cl-parser-kit-test"
   :description "Tests for cl-parser-kit."
+  :version "0.1.0"
   :author "takeokunn"
   :license "MIT"
   :homepage "https://github.com/takeokunn/cl-parser-kit"
@@ -21,6 +22,7 @@
                (:file "tokenizer-identifier-test")
                (:file "spans-test")
                (:file "diagnostics-test")
+               (:file "mutation-testing-test")
                 (:file "combinators-support")
                 (:file "combinators-fixtures")
                 (:file "combinators-core-test")
