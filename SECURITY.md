@@ -35,7 +35,14 @@ Reports are most actionable when they involve one of these areas:
 ## Support Boundary
 
 The current verified baseline is the repository-local verification set
-documented in [`SUPPORT.md`](./SUPPORT.md):
+documented in [`SUPPORT.md`](./SUPPORT.md). On a machine with Nix, the whole
+gate runs as a single reproducible command:
+
+```sh
+nix flake check
+```
+
+Without Nix, run the equivalent raw-checkout scripts directly:
 
 ```sh
 sbcl --script scripts/run-compile-check.lisp

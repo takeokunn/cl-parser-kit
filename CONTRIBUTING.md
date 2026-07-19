@@ -31,6 +31,8 @@ shape.
 
 ## Working Style
 
+- use `nix flake check` to run the full reproducible gate (compile check,
+  tests, coverage, and lint) the same way CI does
 - use `sbcl --script scripts/run-tests.lisp` to verify changes from a raw
   checkout
 - use `sbcl --script scripts/run-compile-check.lisp` when a change could

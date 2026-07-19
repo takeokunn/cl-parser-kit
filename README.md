@@ -700,7 +700,7 @@ The exported surface is grouped by concern:
 - external-token fallback diagnostics are covered in [`examples/external-token-diagnostic-example.lisp`](./examples/external-token-diagnostic-example.lisp)
 - Pratt parsing: `make-pratt-table`, `register-*operator`, `parse-pratt`, `parse-pratt-all`, `parse-pratt-source`
 - tree helpers: `make-ast-node`, `make-cst-node`, `ast-node->sexp`, `cst-node->sexp`
-- test helpers: `deftest-case`, `run-tests`
+- test execution: `asdf:test-system "cl-parser-kit-test"` or `sbcl --script scripts/run-tests.lisp`
 
 For exact exports, see [`src/package.lisp`](./src/package.lisp).
 

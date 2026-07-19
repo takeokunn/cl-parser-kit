@@ -7,6 +7,11 @@ already be explicit.
 
 Before cutting a public release:
 
+1. run `nix flake check` from a clean checkout to execute the full
+   reproducible CI gate (compile check, tests, coverage, and lint); the
+   individual steps below stay documented for environments without Nix, where
+   `nix develop --command sbcl --script scripts/run-tests.lisp` is the closest
+   pinned-toolchain equivalent
 1. run `./scripts/run-release-audit.sh` from a clean checkout
 2. rerun `sbcl --script scripts/run-compile-check.lisp` to prove both shipped
    ASD systems still compile from a raw checkout

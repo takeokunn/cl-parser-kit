@@ -9,7 +9,8 @@ Maintainers are expected to:
 - review changes for API and behavior regressions
 - keep `README.md`, `API.md`, `EXAMPLES.md`, and `SUPPORT.md` aligned with the
   shipped behavior
-- preserve the raw-checkout verification path through
+- keep the reproducible `nix flake check` gate green, and preserve the
+  raw-checkout verification path through
   `sbcl --script scripts/run-tests.lisp`
 - keep issue triage, security routing, and conduct handling actionable
 

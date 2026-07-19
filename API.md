@@ -188,6 +188,11 @@ large grammar framework.
   and `:min-binding-power` keywords through after tokenization
 - EOF and missing-prefix failures return `parse-failure` values instead of
   signaling internal errors
+- large or deeply nested input is bounded by `*maximum-pratt-recursion-depth*`:
+  once recursion (nesting depth, or the number of operators in a flat chain)
+  exceeds it, parsing returns a `:maximum-recursion-depth` failure instead of
+  exhausting the control stack; rebind it for intentionally large or deep
+  grammars
 - `parse-pratt-all` matches `parse-all`: it rejects trailing tokens while
   preserving the actual trailing token in the returned failure
 - Pratt handlers use the same parser contract as other combinators:
@@ -208,20 +213,15 @@ AST and CST helpers keep tree-shaped output simple and explicit.
 
 ## Testing
 
-The local test helpers are exported so the suite can stay self-contained.
+The repository test system runs on `cl-weave`, with `cl-prolog/weave`
+providing declarative contract checks for parser behavior.
 
-- `deftest-case`
-- `run-tests`
-- assertions: `assert-equal`, `assert-true`, `assert-false`, `assert-signals`
+- primary entry point: `asdf:test-system "cl-parser-kit-test"`
+- raw checkout script: `sbcl --script scripts/run-tests.lisp`
+- coverage script: `sbcl --script scripts/run-coverage.lisp`
 
-`run-tests` accepts `:filter` and `:stream` keyword arguments. `:filter` may be
-`nil`, a case-insensitive substring, an exact test symbol, or a predicate that
-receives each test name symbol.
-
-For raw-checkout verification without preloading the system, the repository
-script mirrors the substring case through
-`sbcl --script scripts/run-tests.lisp [FILTER]` or
-`sbcl --script scripts/run-tests.lisp --filter FILTER`.
+`cl-parser-kit-test.asd` executes the full suite through `cl-weave:run-all`
+with the `:spec` reporter and treats an empty suite as a failure.
 
 ## Recommended Entry Points
 
@@ -235,7 +235,10 @@ If you are new to the library, start here:
    hand-rolling the control flow.
    For left- or right-associative operator chains outside Pratt parsing,
    start with `chainl1` or `chainr1`; pair them with `operator-parser` when
-   the operator token itself does not carry semantic payload.
+   the operator token itself does not carry semantic payload. `chainr1`
+   recurses in step with the right-associative nesting depth, so for input
+   that may be adversarially deep prefer `parse-pratt`, whose depth is bounded
+   by `*maximum-pratt-recursion-depth*`.
 3. use `parse-tokens`, `parse-all`, or `parse-source` for end-to-end parsing
 4. move to `parse-pratt`, `parse-pratt-all`, or `parse-pratt-source`
    when expression precedence matters

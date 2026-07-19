@@ -5,8 +5,9 @@ practical, testable, and easy to audit.
 
 ## Near Term
 
-- add repository-level CI for `asdf:test-system :cl-parser-kit` so verification
-  does not depend on manual local execution
+- keep the repository-level `nix flake check` CI green so verification does not
+  depend on manual local execution, and grow the enforced `coverage` gate
+  alongside the parser and diagnostic surface
 - cut the first tagged release only after the verification path is repeatable
   and the public boundary is documented tightly enough to audit
 - keep adding targeted regression tests for portability-sensitive parser and

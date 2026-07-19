@@ -1,4 +1,6 @@
 *.fasl
+/cl-parser-kit.coverage
+/cl-parser-kit-coverage-report/
 /.cl-parser-kit/
 /.claude/
 /.serena/
