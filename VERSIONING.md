@@ -8,7 +8,7 @@ Until versioned releases exist:
 
 - consume reviewed commits, not floating branch tips
 - pin the exact commit in downstream projects
-- rerun `sbcl --script scripts/run-tests.lisp` from that checkout before
+- rerun `nix flake check` from that checkout before
   treating it as a supported baseline
 
 ## Intended Release Model

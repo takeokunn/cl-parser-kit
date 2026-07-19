@@ -8,12 +8,18 @@ from this repository.
 The primary support baseline is:
 
 ```sh
-sbcl --script scripts/run-tests.lisp
+nix flake check
 ```
 
-That command registers the repository's ASD metadata from the checkout root,
-loads the library and test files directly, and runs the full test suite
-without requiring the checkout to be pre-registered on ASDF's search path.
+That command resolves the pinned test dependencies, runs the full `cl-weave`
+suite including the `cl-prolog/weave` contract checks, produces coverage
+artifacts, and checks Lisp structure.
+
+The checked flake systems are `x86_64-linux` and `aarch64-linux`. The hosted CI
+baseline is Linux on `ubuntu-latest`. CI optionally pulls from the cache named by the
+`CACHIX_CACHE` repository variable and pushes only when the
+`CACHIX_AUTH_TOKEN` secret is configured. The project cache is not required to
+run the checks.
 
 For raw-checkout compile validation of both shipped ASD systems, this
 repository also provides:
@@ -51,6 +57,7 @@ available through:
 
 - support claims should be backed by executable tests or documented examples
 - the checked-in SBCL baseline is the primary regression target
+- Linux is the current Nix and hosted CI platform boundary
 - `./scripts/run-implementation-smoke.sh` is available for broader portability
   checks when needed
 - portability across other Common Lisp implementations remains a design goal,
@@ -67,7 +74,7 @@ Before treating a checkout as a release candidate:
   readiness audit in one pass
 - rerun `sbcl --script scripts/run-compile-check.lisp` if the checkout changed
   system definitions, package wiring, or compile-time behavior
-- rerun `sbcl --script scripts/run-tests.lisp` from that checkout
+- rerun `nix flake check` from that checkout
 - rerun `sbcl --script scripts/run-examples.lisp` if the checkout will be
   consumed through the documented sample workflows
 - ensure public docs and examples still match observed behavior

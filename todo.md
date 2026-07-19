@@ -71,7 +71,6 @@
       parser.lisp
       ast.lisp
       cst.lisp
-      testing.lisp
     t/
       package.lisp
       tokens-test.lisp
@@ -97,7 +96,10 @@
 
   (asdf:test-system :cl-parser-kit)
 
-  Keep dependencies light. If a test framework is needed, prefer FiveAM, but do not make the library itself depend on heavy infrastructure.
+  Keep runtime dependencies light.
+  Use a dedicated test system that depends on `cl-weave` and
+  `cl-prolog/weave`, and do not keep compatibility wrappers for an older test
+  framework in the library package.
 
   ## Public Package
 
