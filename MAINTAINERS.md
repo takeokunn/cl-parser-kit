@@ -9,8 +9,9 @@ Maintainers are expected to:
 - review changes for API and behavior regressions
 - keep `README.md`, `API.md`, `EXAMPLES.md`, and `SUPPORT.md` aligned with the
   shipped behavior
-- preserve the raw-checkout verification path through
-  `sbcl --script scripts/run-tests.lisp`
+- preserve the reproducible verification path through `nix flake check` and
+  the focused `sbcl --script scripts/run-tests.lisp` entry point inside the
+  Nix development shell
 - keep issue triage, security routing, and conduct handling actionable
 
 ## Availability Expectations

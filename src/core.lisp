@@ -10,14 +10,16 @@
     (list (coerce thing 'vector))))
 
 (defun char-whitespace-p (char)
-  (member char '(#\Space #\Tab #\Newline #\Linefeed #\Return #\Page) :test #'char=))
+  (case char
+    ((#\Space #\Tab #\Newline #\Linefeed #\Return #\Page) t)
+    (t nil)))
 
 (defun digit-char-p* (char)
   (and (digit-char-p char) t))
 
 (defun identifier-start-char-p (char)
   (or (alpha-char-p char)
-      (member char '(#\_ #\-) :test #'char=)))
+      (case char ((#\_ #\-) t) (t nil))))
 
 (defun identifier-char-p (char)
   (or (identifier-start-char-p char)
@@ -29,9 +31,12 @@
       (char= char #\Return)))
 
 (defun advance-position (string start end line column)
-  (loop with current-line = line
-        with current-column = column
-        with index = start
+  (declare (type string string)
+           (type fixnum start end line column)
+           (optimize (speed 2) (safety 1)))
+  (loop with current-line of-type fixnum = line
+        with current-column of-type fixnum = column
+        with index of-type fixnum = start
         while (< index end)
         do (let ((char (char string index)))
              (cond

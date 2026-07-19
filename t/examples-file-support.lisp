@@ -23,7 +23,7 @@
 (defmacro assert-example-success (form (value next failure) &body assertions)
   `(assert-example-values ,form (ok ,value ,next ,failure)
      (declare (ignorable ok))
-     (assert-true ok)
+     (expect ok :to-be-truthy)
      ,@assertions))
 
 (defmacro assert-example-successes (&body specs)
@@ -63,22 +63,18 @@
 (defmacro assert-example-failure (form (value next failure) &body assertions)
   `(assert-example-values ,form (ok ,value ,next ,failure)
      (declare (ignorable ,value ,failure))
-     (assert-false ok)
-     (assert-false ,value)
+     (expect ok :to-be-falsy)
+     (expect ,value :to-be-falsy)
      ,@assertions))
 
 (defmacro register-example-test-case (name &body body)
-  (let ((package-name (package-name *package*)))
-    `(eval-when (:load-toplevel :execute)
-       (cl-parser-kit::%register-test-case ',name
-                                           ,package-name
-                                           (lambda ()
-                                             ,@body)))))
+  `(it-sequential ,(string-downcase (string name))
+     ,@body))
 
 (defmacro register-example-render-test (name file function snippets)
   `(register-example-test-case ,name
      (let ((rendered (call-example-function ,file ,function)))
-       (assert-true (stringp rendered))
+       (expect (stringp rendered) :to-be-truthy)
        (assert-string-contains-all rendered ,snippets))))
 
 (defmacro register-example-render-tests (&rest specs)

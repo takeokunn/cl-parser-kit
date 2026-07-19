@@ -2,21 +2,19 @@
 
 (register-example-test-cases
  (token-navigation-example-workflow-test
-  (assert-equal
-   '(:peek "answer"
+  (expect (call-example-function "token-navigation-example.lisp"
+                          "INSPECT-TOKEN-NAVIGATION-EXAMPLE") :to-equal '(:peek "answer"
      :next ("answer" 1)
      :eof-before nil
-     :parse (t ("answer" 42) 3 nil)
-     :eof-after t)
-   (call-example-function "token-navigation-example.lisp"
-                          "INSPECT-TOKEN-NAVIGATION-EXAMPLE")))
+     :parse (:ok t :value ("answer" 42) :next 3 :failure nil)
+     :eof-after t)))
  (tokenizer-example-file-test
   (let ((tokens (call-example-function "tokenizer-example.lisp"
                                        "TOKENIZE-SUM-EXAMPLE")))
-    (assert-equal 3 (length tokens))
-    (assert-equal :identifier (token-type (aref tokens 0)))
-    (assert-equal :plus (token-type (aref tokens 1)))
-    (assert-equal 42 (token-value (aref tokens 2)))))
+    (expect (length tokens) :to-equal 3)
+    (expect (token-type (aref tokens 0)) :to-equal :identifier)
+    (expect (token-type (aref tokens 1)) :to-equal :plus)
+    (expect (token-value (aref tokens 2)) :to-equal 42)))
  (tokenizer-custom-language-example-file-test
   (assert-dsl-sample-tokens
    (call-example-function "tokenizer-example.lisp"
@@ -28,68 +26,68 @@
   "PARSE-LET-LIST-EXAMPLE"
   ()
   (value next failure)
-  (assert-equal 9 next)
-  (assert-equal "x" (token-text (first (first value))))
-  (assert-equal "y" (token-text (second (first value))))
-  (assert-equal "z" (token-text (third (first value)))))
+  (expect next :to-equal 9)
+  (expect (token-text (first (first value))) :to-equal "x")
+  (expect (token-text (second (first value))) :to-equal "y")
+  (expect (token-text (third (first value))) :to-equal "z"))
  (seq-helper-example-file-test
-  "seq-helper-example.lisp"
+  "sequence-helper-example.lisp"
   "PARSE-IDENTIFIER-GROUP-EXAMPLE"
   ()
   (value next failure)
-  (assert-equal 8 next)
-  (assert-equal '("x" "y" "z") value))
+  (expect next :to-equal 8)
+  (expect value :to-equal '("x" "y" "z")))
  (seq-helper-trailing-example-file-test
-  "seq-helper-example.lisp"
+  "sequence-helper-example.lisp"
   "PARSE-TRAILING-IDENTIFIER-GROUP-EXAMPLE"
   ()
   (value next failure)
-  (assert-equal 9 next)
-  (assert-equal '("x" "y" "z") value))
+  (expect next :to-equal 9)
+  (expect value :to-equal '("x" "y" "z")))
  (seq-helper-binding-fields-example-file-test
-  "seq-helper-example.lisp"
+  "sequence-helper-example.lisp"
   "PARSE-BINDING-FIELDS-EXAMPLE"
   ()
   (value next failure)
-  (assert-equal 4 next)
-  (assert-equal '("answer" :assign 42) value))
+  (expect next :to-equal 4)
+  (expect value :to-equal '("answer" :assign 42)))
  (operator-chain-left-example-file-test
   "operator-chain-example.lisp"
   "PARSE-LEFT-ASSOCIATIVE-CHAIN-EXAMPLE"
   ()
   (value next failure)
-  (assert-equal 5 next)
-  (assert-equal 5 value))
+  (expect next :to-equal 5)
+  (expect value :to-equal 5))
   (operator-chain-right-example-file-test
    "operator-chain-example.lisp"
    "PARSE-RIGHT-ASSOCIATIVE-CHAIN-EXAMPLE"
    ()
    (value next failure)
-   (assert-equal 5 next)
-   (assert-equal 512 value))
+   (expect next :to-equal 5)
+   (expect value :to-equal 512))
   (expression-parser-example-file-test
    "expression-parser.lisp"
-   "PARSE-ADDITION-EXAMPLE"
+   "PARSE-POSTFIX-PRECEDENCE-EXAMPLE"
    ()
    (value next failure)
-   (assert-equal 4 next)
-   (assert-equal '(:add 1 (:fact 2)) value))
+   (expect next :to-equal 4)
+   (expect value :to-equal '(:add 1 (:fact 2))))
   (mini-language-example-file-test
    "mini-language-parser.lisp"
    "PARSE-LET-STATEMENT-EXAMPLE"
    ()
    (value next failure)
-   (assert-equal 5 next)
-   (assert-equal :let (token-type (first value)))
-   (assert-equal "answer" (token-text (second value)))
-   (assert-equal 42 (token-value (fourth value))))
+   (expect next :to-equal 5)
+   (expect (token-type (first value)) :to-equal :let)
+   (expect (token-text (second value)) :to-equal "answer")
+   (expect (token-value (fourth value)) :to-equal 42))
   (cst-example-file-test
    "cst-example.lisp"
    "PARSE-BINDING-CST"
    ("let answer = 42;")
    (value next failure)
-   (assert-equal 5 next)
-  (assert-equal '(:type :binding
+   (expect next :to-equal 5)
+  (expect value :to-equal '(:type :binding
                   :value nil
                   :children ((:type :keyword
                               :value "let"
@@ -129,8 +127,7 @@
                   :span (:source "let answer = 42;"
                          :start 0 :end 16
                          :start-line 1 :start-column 1
-                         :end-line 1 :end-column 17))
-                value)))
+                         :end-line 1 :end-column 17)))))
 
 (register-example-render-tests
  (token-stream-example-file-test
@@ -153,18 +150,19 @@
     "note: check syntax [1:5-1:6]"
     "fix-it [1:1-1:1]: replace with \"x\"")))
 
-(deftest-case failure-shaping-example-file-test
+(it-sequential "failure-shaping-example-file-test"
   (let ((result (call-example-function "failure-shaping-example.lisp"
                                        "INSPECT-BINDING-FAILURE-EXAMPLE")))
-    (assert-equal '(1 :binding-name t :equals) result)))
+    (expect result :to-equal '(1 :binding-name t :equals))))
 
-(deftest-case diagnostic-example-file-test
-  (assert-example-failure
+(it-sequential "diagnostic-example-file-test"
+  (assert-example-values
    (call-example-function "diagnostic-example.lisp"
                           "PARSE-EXPRESSION-SOURCE"
                           "1 + +")
-   (value next failure)
-    (assert-equal 2 next)
-    (assert-true (stringp value))
-    (assert-true (search "Expected PREFIX" value))
-    (assert-true (search "1 + +" value))))
+   (ok value next failure)
+    (expect ok :to-be-falsy)
+    (expect next :to-equal 2)
+    (expect (stringp value) :to-be-truthy)
+    (expect (search "Expected PREFIX" value) :to-be-truthy)
+    (expect (search "1 + +" value) :to-be-truthy)))

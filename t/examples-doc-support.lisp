@@ -73,16 +73,11 @@
 (defun assert-document-contains-all (doc-name snippets)
   (let ((contents (doc-file-contents doc-name)))
     (dolist (snippet snippets)
-      (assert-true (string-contains-p snippet contents)
-                   (format nil "~A must contain ~S" doc-name snippet)))))
+      (expect (string-contains-p snippet contents) :to-be-truthy))))
 
 (defmacro register-document-snippet-test (name document snippets)
-  (let ((package-name (package-name *package*)))
-    `(eval-when (:load-toplevel :execute)
-       (cl-parser-kit::%register-test-case ',name
-                                           ,package-name
-                                           (lambda ()
-                                             (assert-document-contains-all ,document ,snippets))))))
+  `(it-sequential ,(string-downcase (string name))
+     (assert-document-contains-all ,document ,snippets)))
 
 (defmacro register-document-snippet-tests (&body specs)
   `(progn

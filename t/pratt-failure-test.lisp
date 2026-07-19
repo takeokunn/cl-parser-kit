@@ -1,24 +1,20 @@
 (in-package :cl-parser-kit/test)
 
-(eval-when (:load-toplevel :execute)
-  (load (merge-pathnames "pratt-failure-trailing-test.lisp"
-                         (or *load-pathname* *compile-file-pathname*))))
-
-(deftest-case pratt-unexpected-eof-test
+(it-sequential "pratt-unexpected-eof-test"
   (with-pratt-number-table (table)
     (let ((tokens #()))
       (assert-pratt-failure-values (parse-pratt tokens table)
           (value next failure)
-        (assert-equal 0 next)
-        (assert-equal 0 (parse-failure-position failure))
-        (assert-equal :expression (parse-failure-expected failure))
-        (assert-equal nil (parse-failure-actual failure))
+        (expect next :to-equal 0)
+        (expect (parse-failure-position failure) :to-equal 0)
+        (expect (parse-failure-expected failure) :to-equal :expression)
+        (expect (parse-failure-actual failure) :to-equal nil)
         (let ((diagnostic (first (parse-failure-diagnostics failure))))
-        (assert-true diagnostic)
-        (assert-equal 0 (span-start (diagnostic-span diagnostic)))
-        (assert-equal 0 (span-end (diagnostic-span diagnostic))))))))
+        (expect diagnostic :to-be-truthy)
+        (expect (span-start (diagnostic-span diagnostic)) :to-equal 0)
+        (expect (span-end (diagnostic-span diagnostic)) :to-equal 0))))))
 
-(deftest-case pratt-infix-rhs-failure-propagates-test
+(it-sequential "pratt-infix-rhs-failure-propagates-test"
   (with-pratt-plus-table (table)
     (let ((tokens (vector (make-token :type :number :text "1" :value 1)
                           (make-token :type :plus :text "+")
@@ -29,22 +25,22 @@
                                  (values t left next nil)))
       (assert-pratt-failure-values (parse-pratt tokens table)
           (value next failure)
-        (assert-equal 2 next)
-        (assert-equal :prefix (parse-failure-expected failure))
-        (assert-equal :plus (token-type (parse-failure-actual failure)))))))
+        (expect next :to-equal 2)
+        (expect (parse-failure-expected failure) :to-equal :prefix)
+        (expect (token-type (parse-failure-actual failure)) :to-equal :plus)))))
 
-(deftest-case pratt-infix-rhs-failure-recovers-line-columns-from-metadata-source-test
+(it-sequential "pratt-infix-rhs-failure-recovers-line-columns-from-metadata-source-test"
   (assert-pratt-failure-values (%run-pratt-plus-rhs-metadata-failure)
       (value next failure)
-    (assert-equal 2 next)
+    (expect next :to-equal 2)
     (let* ((diagnostic (first (parse-failure-diagnostics failure)))
            (rendered (diagnostic->string diagnostic)))
       (%assert-diagnostic-span diagnostic 3 1 3 2)
-      (assert-true (search "EXPECTED PREFIX" (string-upcase rendered)))
-      (assert-true (search "3:1-3:2" rendered))
-      (assert-true (search "  | +" rendered)))))
+      (expect (search "EXPECTED PREFIX" (string-upcase rendered)) :to-be-truthy)
+      (expect (search "3:1-3:2" rendered) :to-be-truthy)
+      (expect (search "  | +" rendered) :to-be-truthy))))
 
-(deftest-case pratt-prefix-handler-failure-propagates-test
+(it-sequential "pratt-prefix-handler-failure-propagates-test"
   (with-pratt-number-table (table)
     (let* ((token (make-token :type :number :text "1" :value 1))
            (failure (make-parse-failure
@@ -61,10 +57,10 @@
                                   (values nil nil next failure)))
       (assert-pratt-failure-values (parse-pratt tokens table)
           (value next actual-failure)
-        (assert-equal 1 next)
+        (expect next :to-equal 1)
         (%assert-pratt-failure-shape actual-failure 1 :literal :number)))))
 
-(deftest-case pratt-postfix-handler-failure-propagates-test
+(it-sequential "pratt-postfix-handler-failure-propagates-test"
   (with-pratt-number-table (table)
     (let* ((operator (make-token :type :bang :text "!"))
            (failure (make-parse-failure
@@ -82,10 +78,10 @@
                                    (values nil nil next failure)))
       (assert-pratt-failure-values (parse-pratt tokens table)
           (value next actual-failure)
-        (assert-equal 2 next)
+        (expect next :to-equal 2)
         (%assert-pratt-failure-shape actual-failure 2 :factorial-domain :bang)))))
 
-(deftest-case pratt-infix-handler-failure-propagates-test
+(it-sequential "pratt-infix-handler-failure-propagates-test"
   (with-pratt-number-table (table)
     (let* ((operator (make-token :type :slash :text "/"))
            (failure (make-parse-failure
@@ -106,10 +102,10 @@
                                      (values t right next nil))))
       (assert-pratt-failure-values (parse-pratt tokens table)
           (value next actual-failure)
-        (assert-equal 3 next)
+        (expect next :to-equal 3)
         (%assert-pratt-failure-shape actual-failure 3 :non-zero-divisor :slash)))))
 
-(deftest-case pratt-infix-handler-controls-next-position-test
+(it-sequential "pratt-infix-handler-controls-next-position-test"
   (with-pratt-number-table (table)
     (let* ((trailing (make-token :type :bang :text "!"))
            (tokens (vector (make-token :type :number :text "1" :value 1)
@@ -122,6 +118,6 @@
                                  (values t (+ left right) 3 nil)))
       (assert-pratt-success-values (parse-pratt tokens table)
           (value next)
-        (assert-equal 3 value)
-        (assert-equal 3 next)
-        (assert-equal trailing (aref tokens next))))))
+        (expect value :to-equal 3)
+        (expect next :to-equal 3)
+        (expect (aref tokens next) :to-equal trailing)))))

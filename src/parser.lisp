@@ -12,15 +12,20 @@
     (>= position (length stream))))
 
 (defun parse-tokens (parser tokens)
-  (multiple-value-bind (ok value next failure)
-      (run-parser parser tokens 0)
-    (if ok
-        (values t value next nil)
-        (values nil nil next failure))))
+  ;; Coerce the token stream to a vector exactly once at the public boundary so
+  ;; every downstream terminal step performs O(1) indexed access instead of
+  ;; re-coercing a list on each token (which is O(n^2) over the whole parse).
+  (let ((stream (ensure-vector tokens)))
+    (multiple-value-bind (ok value next failure)
+        (run-parser parser stream 0)
+      (if ok
+          (values t value next nil)
+          (values nil nil next failure)))))
 
 (defun parse-all (parser tokens)
-  (%parse-with-full-consumption (tokens)
-      (parse-tokens parser tokens)))
+  (let ((stream (ensure-vector tokens)))
+    (%parse-with-full-consumption (stream)
+        (parse-tokens parser stream))))
 
 (defun parse-source (parser source tokenizer)
   (let ((tokens (tokenize source tokenizer)))

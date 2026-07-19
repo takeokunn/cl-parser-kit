@@ -5,7 +5,7 @@
   :homepage "https://github.com/takeokunn/cl-parser-kit"
   :bug-tracker "https://github.com/takeokunn/cl-parser-kit/issues"
   :source-control (:git "https://github.com/takeokunn/cl-parser-kit.git")
-  :depends-on ("cl-parser-kit")
+  :depends-on ("cl-parser-kit" "cl-weave" "cl-prolog/weave")
   :pathname "t"
   :serial t
   :components ((:file "package")
@@ -32,14 +32,17 @@
                (:file "pratt-support")
                (:file "pratt-fixtures")
                (:file "pratt-basic-test")
+               (:file "pratt-failure-trailing-test")
                (:file "pratt-failure-test")
                (:file "pratt-source-test")
                (:file "pratt-contract-test")
+               (:file "prolog-contract-test")
                (:file "parser-support")
                (:file "parser-core-test")
                (:file "parser-diagnostic-test")
                (:file "parser-runtime-test")
                (:file "parser-contract-test")
+               (:file "parser-properties-test")
                (:file "examples-doc-data")
                (:file "examples-common-support")
                (:file "examples-doc-support")
@@ -56,4 +59,8 @@
                (:file "trees-test"))
   :perform (asdf:test-op (op system)
              (declare (ignore op system))
-             (uiop:symbol-call :cl-parser-kit/test :run-all-tests)))
+             (unless (uiop:symbol-call :cl-weave
+                                       :run-all
+                                       :reporter :spec
+                                       :pass-with-no-tests nil)
+               (error "cl-parser-kit tests failed"))))

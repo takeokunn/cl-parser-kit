@@ -3,6 +3,31 @@
 (defmacro %pratt-success (value next)
   `(values t ,value ,next nil))
 
+(defun %build-add (left right)
+  (list :add left right))
+
+(defun %build-mul (left right)
+  (list :mul left right))
+
+(defun %build-pow (left right)
+  (list :pow left right))
+
+(defun %build-fact (value)
+  (list :fact value))
+
+(defun %pratt-postfix-led (left operator stream next current-table)
+  (declare (ignore operator stream current-table))
+  (%pratt-success (%build-fact left) next))
+
+(defun %pratt-fact-led (left operator stream next current-table)
+  (%pratt-postfix-led left operator stream next current-table))
+
+(defun %assert-pratt-failure-shape (failure position expected actual-type)
+  (expect (parse-failure-position failure) :to-equal position)
+  (expect (parse-failure-expected failure) :to-equal expected)
+  (expect (token-type (parse-failure-actual failure)) :to-equal actual-type)
+  (expect (parse-failure-diagnostics failure) :to-have-length 1))
+
 (defmacro with-pratt-diagnostic-context ((tokenizer table) &body body)
   `(let* ((,tokenizer (make-tokenizer
                        :rules (list (make-whitespace-rule :skip-p t)
@@ -25,15 +50,14 @@
   `(multiple-value-bind (ok value next failure)
        (parse-pratt-source ,source ,tokenizer ,table)
      (declare (ignore value next))
-     (assert-false ok)
-     (assert-true failure)
+     (expect ok :to-be-falsy)
+     (expect failure :to-be-truthy)
      (assert-string-contains-all
       (parse-failure->string failure)
       ,expected-snippets)))
 
 (defmacro assert-pratt-success-values (form (value next) &body assertions)
   `(%assert-success-values ,form (,value ,next failure)
-     (declare (ignore failure))
      ,@assertions))
 
 (defmacro assert-pratt-failure-values (form (value next failure) &body assertions)

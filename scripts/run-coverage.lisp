@@ -8,15 +8,21 @@
 
 (let ((project-root (current-project-root)))
   (require :asdf)
-  (load-project-tests project-root)
+  (require :sb-cover)
+  (proclaim `(optimize (,(intern "STORE-COVERAGE-DATA" "SB-COVER") 3)))
+  ;; sb-cover instruments at COMPILE time, so the project must be compiled (not
+  ;; loaded interpreted) for the report to capture any data.
+  (compile-project-tests project-root)
   (let ((plan (package-symbol-call "CL-WEAVE" "LIST-TESTS"
                                    :reporter :json
                                    :stream (make-broadcast-stream))))
-    (format t "Loaded ~D tests.~%" (length plan))
+    (format t "Loaded ~D tests for coverage.~%" (length plan))
     (when (zerop (length plan))
-      (error "cl-parser-kit loaded zero tests")))
+      (error "cl-parser-kit loaded zero tests for coverage")))
   (unless (package-symbol-call :cl-weave
                                :run-all
-                               :reporter :spec
+                               :coverage t
+                               :coverage-output "cl-parser-kit.coverage"
+                               :coverage-report-directory "cl-parser-kit-coverage-report/"
                                :pass-with-no-tests nil)
     (uiop:quit 1)))

@@ -30,3 +30,26 @@
                 (cl-parser-kit:parse-failure->string failure)
                 next
                 failure))))
+
+;; Building a diagnostic by hand: message, primary span, an explanatory note,
+;; and a fix-it suggestion. Try: (princ (render-manual-diagnostic-example))
+(defun render-manual-diagnostic-example ()
+  (let* ((source "foo + bar")
+         (primary-span (cl-parser-kit:make-span
+                        :source source :start 4 :end 5
+                        :start-line 1 :start-column 5
+                        :end-line 1 :end-column 6))
+         (note (cl-parser-kit:note-diagnostic
+                "check syntax" :span primary-span))
+         (fix (cl-parser-kit:make-fix-it
+               :span (cl-parser-kit:make-span
+                      :source source :start 0 :end 0
+                      :start-line 1 :start-column 1
+                      :end-line 1 :end-column 1)
+               :replacement "x"))
+         (diagnostic (cl-parser-kit:error-diagnostic
+                      "bad token"
+                      :span primary-span
+                      :notes (list note)
+                      :fixes (list fix))))
+    (cl-parser-kit:diagnostic->string diagnostic)))

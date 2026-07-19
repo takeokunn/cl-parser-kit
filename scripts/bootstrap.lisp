@@ -1,178 +1,187 @@
-(defparameter *cl-parser-kit-source-files*
-  '("src/package.lisp"
-    "src/core.lisp"
-    "src/spans.lisp"
-    "src/tokens.lisp"
-    "src/token-span.lisp"
-    "src/tokenizer.lisp"
-    "src/diagnostics.lisp"
-    "src/diagnostics-format.lisp"
-    "src/tree.lisp"
-    "src/parse-failure.lisp"
-    "src/parse-failure-format.lisp"
-    "src/combinators.lisp"
-    "src/combinators-sequence.lisp"
-    "src/combinators-boundary.lisp"
-    "src/pratt.lisp"
-    "src/parser.lisp"
-    "src/ast.lisp"
-    "src/cst.lisp"
-    "src/testing.lisp"))
+(require :asdf)
 
-(defparameter *cl-parser-kit-test-files*
-  '("t/package.lisp"
-    "t/tokens-test.lisp"
-    "t/tokenizer-support.lisp"
-    "t/tokenizer-basic-test.lisp"
-    "t/tokenizer-span-test.lisp"
-    "t/tokenizer-comment-test.lisp"
-    "t/tokenizer-string-test.lisp"
-    "t/tokenizer-comment-rules-test.lisp"
-    "t/tokenizer-keyword-test.lisp"
-    "t/tokenizer-identifier-test.lisp"
-    "t/spans-test.lisp"
-    "t/diagnostics-test.lisp"
-    "t/combinators-support.lisp"
-    "t/combinators-core-test.lisp"
-    "t/combinators-chain-test.lisp"
-    "t/combinators-separator-test.lisp"
-    "t/combinators-delimited-test.lisp"
-    "t/combinators-control-test.lisp"
-    "t/combinators-transform-test.lisp"
-    "t/pratt-support.lisp"
-    "t/pratt-basic-test.lisp"
-    "t/pratt-failure-test.lisp"
-    "t/pratt-source-test.lisp"
-    "t/pratt-contract-test.lisp"
-    "t/parser-support.lisp"
-    "t/parser-core-test.lisp"
-    "t/parser-diagnostic-test.lisp"
-    "t/parser-runtime-test.lisp"
-    "t/parser-contract-test.lisp"
-    "t/examples-doc-data.lisp"
-    "t/examples-common-support.lisp"
-    "t/examples-doc-support.lisp"
-    "t/examples-file-support.lisp"
-    "t/examples-runtime-support.lisp"
-    "t/examples-docs-test.lisp"
-    "t/examples-snippets-core-test.lisp"
-    "t/examples-snippets-structures-test.lisp"
-    "t/examples-snippets-runtime-test.lisp"
-    "t/examples-advanced-snippets-test.lisp"
-    "t/examples-files-test.lisp"
-    "t/examples-ops-test.lisp"
-    "t/trees-test.lisp"))
+(defvar *project-root*
+  (uiop:pathname-parent-directory-pathname
+   (uiop:pathname-directory-pathname (or *load-pathname* *compile-file-pathname*))))
 
-(defun ensure-directory-pathname (pathname)
-  (make-pathname :name nil :type nil :version nil :defaults pathname))
-
-(defun pathname-parent-directory-pathname (pathname)
-  (let ((directory-pathname (ensure-directory-pathname pathname)))
-    (make-pathname :host (pathname-host directory-pathname)
-                   :device (pathname-device directory-pathname)
-                   :directory (butlast (pathname-directory directory-pathname))
-                   :name nil
-                   :type nil
-                   :version nil)))
-
-(defun project-root-from-script (&optional (script-path (or *load-pathname* *compile-file-pathname*)))
-  (let ((script-directory (and script-path (ensure-directory-pathname script-path))))
-    (and script-directory
-         (pathname-parent-directory-pathname script-directory))))
-
-(defvar *project-root* nil)
-
-(unless *project-root*
-  (setf *project-root* (project-root-from-script)))
+(defparameter *test-dependency-specs*
+  '(("CL_PARSER_KIT_CL_WEAVE_ROOT" "cl-weave" "cl-weave.asd" ("cl-weave"))
+    ("CL_PARSER_KIT_CL_PROLOG_ROOT" "cl-prolog" "cl-prolog.asd"
+     ("cl-prolog" "cl-prolog/weave"))))
 
 (defun current-project-root ()
-  (or *project-root*
-      (error "Project root is not initialized")))
+  *project-root*)
 
 (defun project-file (project-root relative-path)
   (merge-pathnames relative-path project-root))
 
-(defun load-lisp-file (pathname)
-  (load pathname))
+(defun normalize-directory-pathname (pathspec)
+  (uiop:ensure-directory-pathname (uiop:parse-native-namestring pathspec)))
 
-(defun member-string-p (item strings)
-  (not (null (member item strings :test #'string=))))
+(defun normalize-system-name (designator)
+  (string-downcase
+   (etypecase designator
+     (string designator)
+     (symbol (symbol-name designator)))))
 
-(defun compiled-output-pathname (pathname)
-  (compile-file-pathname pathname))
+(defun load-asd-definition (asd-path)
+  (load (probe-file asd-path)))
 
-(defun compiled-lisp-file-valid-p (pathname)
-  (and (probe-file pathname)
-       (handler-case
-           (with-open-file (stream pathname :direction :input
-                                    :element-type '(unsigned-byte 8))
-             (let ((length (file-length stream)))
-               (and length (plusp length))))
-         (error () nil))))
+(defmacro with-source-load-evaluator (&body body)
+  #+sbcl
+  `(let ((sb-ext:*evaluator-mode* :interpret))
+     ,@body)
+  #-sbcl
+  `(progn
+     ,@body))
 
-(defun compiled-lisp-file-up-to-date-p (source-pathname output-pathname)
-  (and (compiled-lisp-file-valid-p output-pathname)
-       (let ((source-date (file-write-date source-pathname))
-             (output-date (file-write-date output-pathname)))
-         (and source-date output-date
-              (<= source-date output-date)))))
+(defun dependency-root-candidates (project-root env-var fallback-directory)
+  (remove nil
+          (list (uiop:getenv env-var)
+                (namestring
+                 (merge-pathnames
+                  (concatenate 'string "../" fallback-directory "/")
+                  project-root)))
+          :test #'equal))
 
-(defun ensure-compiled-output-file (pathname)
-  (let ((output-pathname (compiled-output-pathname pathname)))
-    (unless (compiled-lisp-file-up-to-date-p pathname output-pathname)
-      (compile-file pathname :output-file output-pathname))
-    output-pathname))
+(defun locate-dependency-asd (project-root env-var fallback-directory asd-name)
+  (loop for candidate in (dependency-root-candidates project-root env-var fallback-directory)
+        for root = (normalize-directory-pathname candidate)
+        for asd-path = (merge-pathnames asd-name root)
+        when (probe-file asd-path)
+          do (return asd-path)
+        finally
+           (error "Missing dependency ASD ~A. Set ~A or place ~A next to the project checkout."
+                  asd-name
+                  env-var
+                  fallback-directory)))
 
-(defun compile-file-in-current-process (pathname)
-  (let ((output-pathname (compiled-output-pathname pathname)))
-    (compile-file pathname :output-file output-pathname)
-    output-pathname))
+(defun load-test-dependency-asd-definitions (project-root)
+  (dolist (spec *test-dependency-specs*)
+    (destructuring-bind (env-var fallback-directory asd-name system-names) spec
+      (declare (ignore system-names))
+      (load-asd-definition
+       (locate-dependency-asd project-root env-var fallback-directory asd-name)))))
 
-(defun ensure-compiled-lisp-file (pathname)
-  (ensure-compiled-output-file pathname))
+(defun component-property (component key)
+  (getf (cddr component) key))
 
-(defun compile-file-isolated (pathname)
-  (compile-file-in-current-process pathname))
+(defun defsystem-form-p (form)
+  (and (consp form)
+       (symbolp (car form))
+       (string-equal (symbol-name (car form)) "DEFSYSTEM")))
 
-(defun compile-and-load-file (pathname)
-  (load (compile-file-in-current-process pathname)))
+(defun find-defsystem-form (asd-path system-name)
+  (with-open-file (stream asd-path :direction :input)
+    (loop for form = (read stream nil nil)
+          while form
+          when (and (defsystem-form-p form)
+                    (string= (normalize-system-name (second form))
+                             (normalize-system-name system-name)))
+            do (return form)
+          finally
+             (error "Missing defsystem ~A in ~A." system-name asd-path))))
 
-(defun load-source-file (pathname)
-  (load (ensure-compiled-output-file pathname)))
+(defun relative-source-pathname (pathspec)
+  (let ((pathname (uiop:parse-unix-namestring (format nil "~A" pathspec))))
+    (if (pathname-type pathname)
+        pathname
+        (make-pathname :type "lisp" :defaults pathname))))
 
-(defun load-test-file (pathname)
-  (load (ensure-compiled-output-file pathname)))
+(defun relative-directory-pathname (pathspec)
+  (uiop:ensure-directory-pathname
+   (uiop:parse-unix-namestring (format nil "~A" pathspec))))
 
-;; Register ASD metadata and conventional aliases without relying on ASDF's
-;; system loading path during raw-checkout verification.
+(defun component-source-files (component parent-directory)
+  (case (car component)
+    (:file
+     (list (merge-pathnames
+            (relative-source-pathname (second component))
+            parent-directory)))
+    (:module
+     (let ((module-directory
+             (merge-pathnames
+              (relative-directory-pathname
+               (or (component-property component :pathname)
+                   (second component)))
+              parent-directory)))
+       (loop for child in (component-property component :components)
+             append (component-source-files child module-directory))))
+    (t
+     nil)))
+
+(defun system-source-files-from-asd (asd-path system-name)
+  (let* ((defsystem-form (find-defsystem-form asd-path system-name))
+         (options (cddr defsystem-form))
+         (base-directory
+           (merge-pathnames
+            (relative-directory-pathname (or (getf options :pathname) ""))
+            (uiop:pathname-directory-pathname asd-path))))
+    (loop for component in (getf options :components)
+          append (component-source-files component base-directory))))
+
+(defun resolve-source-file-pathname (pathname)
+  (or (probe-file pathname)
+      (probe-file (make-pathname :type "lisp" :defaults pathname))
+      pathname))
+
+(defun load-system-source-files (asd-path system-name)
+  (with-source-load-evaluator
+    (dolist (pathname (system-source-files-from-asd asd-path system-name))
+      (load (resolve-source-file-pathname pathname)))))
+
+(defun component-fasl-pathname (output-root pathname index)
+  (merge-pathnames
+   (format nil "~4,'0D-~A.fasl" index (pathname-name pathname))
+   output-root))
+
+(defun compile-system-source-files (asd-path system-name)
+  (let ((output-root
+          (uiop:ensure-directory-pathname
+           (uiop:temporary-directory))))
+    (ensure-directories-exist output-root)
+    (loop for pathname in (system-source-files-from-asd asd-path system-name)
+          for source-file = (resolve-source-file-pathname pathname)
+          for index from 0
+          for output-file = (component-fasl-pathname output-root source-file index)
+          do (load (compile-file source-file :output-file output-file)))))
+
+(defun load-test-dependency-sources (project-root)
+  (dolist (spec *test-dependency-specs*)
+    (destructuring-bind (env-var fallback-directory asd-name system-names) spec
+      (let ((asd-path (locate-dependency-asd project-root env-var fallback-directory asd-name)))
+        (dolist (system-name system-names)
+          (load-system-source-files asd-path system-name))))))
+
 (defun load-project-asd-definitions (project-root &key (include-test-system-p t))
-  (dolist (relative-path (if include-test-system-p
-                             '("cl-parser-kit.asd" "cl-parser-kit-test.asd")
-                             '("cl-parser-kit.asd")))
-    (load-lisp-file (project-file project-root relative-path))))
+  (when include-test-system-p
+    (load-test-dependency-asd-definitions project-root))
+  (load-asd-definition (project-file project-root "cl-parser-kit.asd"))
+  (when include-test-system-p
+    (load-asd-definition (project-file project-root "cl-parser-kit-test.asd"))))
 
 (defun load-project-sources (project-root)
-  (dolist (relative-path *cl-parser-kit-source-files*)
-    (load-source-file (project-file project-root relative-path))))
+  (load-system-source-files (project-file project-root "cl-parser-kit.asd")
+                            "cl-parser-kit"))
+
+(defun compile-project-sources (project-root)
+  (compile-system-source-files (project-file project-root "cl-parser-kit.asd")
+                               "cl-parser-kit"))
 
 (defun load-project-tests (project-root)
-  (require :asdf)
-  (dolist (relative-path *cl-parser-kit-test-files*)
-    (load-test-file (project-file project-root relative-path))))
+  (load-project-asd-definitions project-root)
+  (load-test-dependency-sources project-root)
+  (load-project-sources project-root)
+  (load-system-source-files (project-file project-root "cl-parser-kit-test.asd")
+                            "cl-parser-kit-test"))
 
-(defun compile-project-files (project-root &key include-tests-p)
-  (load-source-file (project-file project-root "src/package.lisp"))
-  (dolist (relative-path *cl-parser-kit-source-files*)
-    (compile-file (project-file project-root relative-path)))
-  (when include-tests-p
-    (require :asdf)
-    (load-source-file (project-file project-root "t/package.lisp"))
-    (dolist (relative-path *cl-parser-kit-test-files*)
-      (load-test-file (project-file project-root relative-path)))))
+(defun compile-project-tests (project-root)
+  (load-project-asd-definitions project-root)
+  (load-test-dependency-sources project-root)
+  (compile-project-sources project-root)
+  (compile-system-source-files (project-file project-root "cl-parser-kit-test.asd")
+                               "cl-parser-kit-test"))
 
-(defun package-symbol-call (package-designator symbol-name &rest arguments)
-  (let* ((package (find-package package-designator))
-         (symbol (and package (find-symbol (string symbol-name) package))))
-    (unless symbol
-      (error "Could not resolve ~A::~A" package-designator symbol-name))
-    (apply (symbol-function symbol) arguments)))
+(defun package-symbol-call (package-name symbol-name &rest arguments)
+  (apply (symbol-function (find-symbol (string symbol-name) package-name))
+         arguments))

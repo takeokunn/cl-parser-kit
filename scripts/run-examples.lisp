@@ -142,7 +142,7 @@
              (ensure (equal '(:peek "answer"
                               :next ("answer" 1)
                               :eof-before nil
-                              :parse (t ("answer" 42) 3 nil)
+                              :parse (:ok t :value ("answer" 42) :next 3 :failure nil)
                               :eof-after t)
                             (call-example "token-navigation-example.lisp"
                                           "INSPECT-TOKEN-NAVIGATION-EXAMPLE"))
@@ -170,7 +170,7 @@
            (lambda ()
              (multiple-value-bind (ok value next failure)
                  (call-example "expression-parser.lisp"
-                               "PARSE-ADDITION-EXAMPLE")
+                               "PARSE-POSTFIX-PRECEDENCE-EXAMPLE")
                (declare (ignore failure))
                (ensure ok "expected successful parse")
                (ensure (= 4 next) "expected cursor 4, got ~A" next)

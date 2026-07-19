@@ -18,22 +18,39 @@
     (write-char #\] out)))
 
 (defun %split-lines (source)
-  (loop with start = 0
-        with lines = '()
-        for newline-index = (position #\Newline source :start start)
-        do (if newline-index
-               (progn
-                 (push (subseq source start newline-index) lines)
-                 (setf start (1+ newline-index)))
-               (return (nreverse (cons (subseq source start (length source))
-                                       lines))))))
+  ;; Break on LF, CRLF, and lone CR so line numbering matches ADVANCE-POSITION,
+  ;; which tracks all three as line breaks; otherwise a CR-only source would
+  ;; render the wrong context line under a caret.
+  (let ((length (length source))
+        (lines '())
+        (start 0)
+        (index 0))
+    (loop while (< index length)
+          do (let ((char (char source index)))
+               (cond
+                 ((char= char #\Return)
+                  (push (subseq source start index) lines)
+                  (if (and (< (1+ index) length)
+                           (char= (char source (1+ index)) #\Newline))
+                      (setf index (+ index 2))
+                      (setf index (1+ index)))
+                  (setf start index))
+                 ((source-line-break-p char)
+                  (push (subseq source start index) lines)
+                  (setf index (1+ index))
+                  (setf start index))
+                 (t
+                  (setf index (1+ index))))))
+    (nreverse (cons (subseq source start length) lines))))
 
 (defun %source-line-at (source line-number)
   (when (and source (plusp line-number))
     (nth (1- line-number) (%split-lines source))))
 
 (defun %caret-padding (start-column)
-  (make-string (+ 1 (max 0 start-column)) :initial-element #\Space))
+  ;; The source line and caret line share the same "  | " gutter, so a 1-based
+  ;; START-COLUMN needs START-COLUMN-1 leading spaces to sit under its character.
+  (make-string (max 0 (1- start-column)) :initial-element #\Space))
 
 (defun %caret-line (span)
   (let* ((start-column (max 1 (span-start-column span)))

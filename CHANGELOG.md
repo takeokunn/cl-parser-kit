@@ -2,6 +2,35 @@
 
 ## Unreleased
 
+- upgraded the test-only dependencies to their latest releases (cl-weave
+  `v0.8.0`, cl-prolog `v0.6.0`) and migrated to cl-weave's string-named test
+  registration API
+- fixed `between` (and therefore `delimited-sep-by`/`delimited-sep-end-by`)
+  to return the inner value instead of the opening delimiter
+- fixed `lookahead` to preserve the farthest inner-failure position instead of
+  resetting to the starting position on failure
+- fixed a crash on an unterminated block comment: `make-block-comment-rule` now
+  consumes to end-of-source (like line comments) instead of raising a type error
+  on untrusted input that opens `/*` without closing it
+- fixed diagnostic caret rendering, which was drawn two columns too far right
+- fixed source-line context under carets for CR-only (classic-Mac) sources so
+  line splitting agrees with position tracking
+- hardened `make-number-rule` against untrusted input: numbers are parsed with
+  `parse-integer` instead of the Lisp reader (which permanently interned
+  malformed runs as symbols), and the scanner accepts at most one decimal point
+- bounded Pratt recursion with `*maximum-pratt-recursion-depth*` so
+  pathologically deep input returns a `:maximum-recursion-depth` failure
+  instead of exhausting the control stack
+- eliminated the O(n^2) parse cost for list token streams by coercing to a
+  vector once at the `parse-tokens` / `parse-all` boundary
+- sped up tokenization (roughly 2x) by returning step state through multiple
+  values instead of a per-token plist, plus tighter numeric declarations
+- added property-based tests (parser invariants, tokenizer span coverage) and a
+  cl-prolog relational contract proving the Pratt precedence graph is acyclic
+- fixed `scripts/run-coverage.lisp` to compile the project (sb-cover instruments
+  at compile time) so the coverage report captures data instead of failing with
+  "did not capture any coverage data"; the src coverage gate now passes at
+  ~91% expression / ~87% branch
 - added `scripts/run-compile-check.lisp` as a raw-checkout compile-verification
   entry point for the library and test ASD systems
 - added `scripts/run-examples.lisp` as a raw-checkout example verification

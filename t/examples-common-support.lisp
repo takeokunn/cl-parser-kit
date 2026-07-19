@@ -1,9 +1,14 @@
 (in-package :cl-parser-kit/test)
 
+(defun project-root ()
+  (asdf:system-source-directory "cl-parser-kit"))
+
+(eval-when (:load-toplevel :execute)
+  (let ((*package* (find-package :cl-user)))
+    (load (merge-pathnames "scripts/bootstrap.lisp" (project-root)))))
+
 (defun project-file-path (name)
-  (common-lisp-user::project-file
-   (common-lisp-user::current-project-root)
-   name))
+  (merge-pathnames name (project-root)))
 
 (defun doc-file-path (name)
   (project-file-path name))
@@ -39,19 +44,16 @@
 
 (defun assert-string-contains-all (string snippets)
   (dolist (snippet snippets)
-    (assert-true (string-contains-p snippet string)
-                 (format nil "Expected ~S to contain ~S" string snippet))))
+    (expect (string-contains-p snippet string) :to-be-truthy)))
 
 (defun assert-string-lacks-any (string snippets message)
   (dolist (snippet snippets)
-    (assert-false (string-contains-p snippet string)
-                  message snippet)))
+    (expect (string-contains-p snippet string) :to-be-falsy)))
 
 (defmacro assert-repository-files-do-not-match (pattern predicate &optional
                                                    (message "Unexpected repository file ~S"))
   `(dolist (name (repository-file-names ,pattern))
-     (assert-false (funcall ,predicate name)
-                   ,message name)))
+     (expect (funcall ,predicate name) :to-be-falsy)))
 
 (defmacro assert-example-shape-failure-snippet ()
   `(assert-example-values
@@ -73,8 +75,8 @@
              (make-token :type :equals :text "=")))
     (ok value next failure)
     (declare (ignore ok value next))
-    (assert-false ok)
-    (assert-equal 1 (parse-failure-position failure))
-    (assert-equal :binding-name (parse-failure-expected failure))
-    (assert-true (parse-failure-committed-p failure))
-    (assert-equal :equals (token-type (parse-failure-actual failure)))))
+    (expect ok :to-be-falsy)
+    (expect (parse-failure-position failure) :to-equal 1)
+    (expect (parse-failure-expected failure) :to-equal :binding-name)
+    (expect (parse-failure-committed-p failure) :to-be-truthy)
+    (expect (token-type (parse-failure-actual failure)) :to-equal :equals)))

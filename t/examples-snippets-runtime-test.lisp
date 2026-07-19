@@ -6,9 +6,9 @@
     (multiple-value-bind (ok value next failure)
         (parse-pratt-source "1 + +" tokenizer table)
       (declare (ignore value))
-      (assert-false ok)
-      (assert-equal 2 next)
-      (assert-true failure)
+      (expect ok :to-be-falsy)
+      (expect next :to-equal 2)
+      (expect failure :to-be-truthy)
       (assert-string-contains-all
        (parse-failure->string failure)
       '("Expected PREFIX"
@@ -26,11 +26,11 @@
     (multiple-value-bind (ok value next failure)
         (parse-source parser "let answer = 42;" tokenizer)
       (declare (ignore failure))
-      (assert-true ok)
-      (assert-equal 5 next)
-      (assert-equal :let (token-type (first value)))
-      (assert-equal "answer" (token-text (second value)))
-      (assert-equal 42 (token-value (fourth value))))))
+      (expect ok :to-be-truthy)
+      (expect next :to-equal 5)
+      (expect (token-type (first value)) :to-equal :let)
+      (expect (token-text (second value)) :to-equal "answer")
+      (expect (token-value (fourth value)) :to-equal 42))))
  (cst-example-workflow-test
   (let* ((tokenizer (make-let-example-tokenizer))
          (parser (seq
@@ -43,8 +43,8 @@
     (multiple-value-bind (ok value next failure)
         (parse-source parser "let answer = 42;" tokenizer)
       (declare (ignore failure))
-      (assert-true ok)
-      (assert-equal 5 next)
+      (expect ok :to-be-truthy)
+      (expect next :to-equal 5)
       (let* ((let-token (first value))
              (identifier-token (second value))
              (equals-token (third value))
@@ -68,7 +68,7 @@
                                    (make-cst-node :type :punctuation
                                                   :value (token-text semicolon-token)
                                                   :span (token-span semicolon-token))))))
-        (assert-equal '(:type :binding
+        (expect (cst-node->sexp cst :include-span t) :to-equal '(:type :binding
                         :value nil
                         :children ((:type :keyword
                                     :value "let"
@@ -108,8 +108,7 @@
                         :span (:source "let answer = 42;"
                                :start 0 :end 16
                                :start-line 1 :start-column 1
-                               :end-line 1 :end-column 17))
-                      (cst-node->sexp cst :include-span t))))))
+                               :end-line 1 :end-column 17)))))))
  (readme-failure-rendering-snippet-test
   (with-pratt-diagnostic-context (tokenizer table)
     (assert-pratt-failure-rendering ("1 + +" tokenizer table)

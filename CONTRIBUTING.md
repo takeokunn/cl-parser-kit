@@ -31,20 +31,19 @@ shape.
 
 ## Working Style
 
-- use `sbcl --script scripts/run-tests.lisp` to verify changes from a raw
-  checkout
+- use `nix flake check` to run the full reproducible gate (compile check,
+  tests, coverage, and lint) the same way CI does, on `x86_64-linux` or
+  `aarch64-linux`
+- use `nix develop --command sbcl --script scripts/run-tests.lisp` to rerun
+  only the test suite with its pinned `cl-weave` and `cl-prolog` dependencies
 - use `sbcl --script scripts/run-compile-check.lisp` when a change could
   affect ASDF loading, package wiring, or compile-time behavior
 - use `sbcl --script scripts/run-examples.lisp` when a change touches public
   sample workflows or documented result shapes
 - use `./scripts/run-implementation-smoke.sh` when a change is specifically
   about implementation portability or support-boundary claims
-- for targeted reruns from a raw checkout, pass a substring directly or use
-  `sbcl --script scripts/run-tests.lisp --filter SUBSTRING`
 - if you already keep the repository on ASDF's search path, `asdf:test-system
   :cl-parser-kit` remains the equivalent REPL-level entry point
-- keep the raw-checkout scripts independent from ASDF system resolution so a
-  fresh clone remains verifiable without extra local registry setup
 - when behavior changes affect diagnostics, examples, or public exports,
   prefer the narrowest supporting regression test in `t/` plus the full ASDF
   suite before handing work off
@@ -70,7 +69,7 @@ Before proposing a user-visible change, verify:
 - `./scripts/run-implementation-smoke.sh` was rerun when portability-facing
   behavior or documented contract changed
 - `./scripts/run-release-audit.sh` still passes from the checkout you modified
-- `sbcl --script scripts/run-tests.lisp` passes from the checkout you modified
+- `nix flake check` passes from the checkout you modified
 
 ## Reporting Bugs
 

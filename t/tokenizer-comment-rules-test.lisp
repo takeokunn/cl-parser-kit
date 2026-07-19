@@ -1,6 +1,6 @@
 (in-package :cl-parser-kit/test)
 
-(deftest-case tokenizer-non-skipping-comment-rules-test
+(it-sequential "tokenizer-non-skipping-comment-rules-test"
   (let* ((line-tokenizer
            (%make-line-comment-tokenizer
             :skip-p nil
@@ -24,7 +24,17 @@ bc */ 42" block-tokenizer)))
                                        :span '(1 1 2 6))
            (%make-tokenizer-token-spec :type :number :value 42)))))
 
-(deftest-case tokenizer-rule-ordering-test
+(it-sequential "tokenizer-unterminated-block-comment-consumes-to-end-test"
+  ;; A block comment with no closing delimiter must consume the rest of the
+  ;; source instead of crashing the tokenizer on untrusted input.
+  (let* ((tokenizer (%make-block-comment-tokenizer :skip-p nil
+                                                   :value-function #'identity))
+         (tokens (tokenize "/* unclosed" tokenizer)))
+    (assert-tokenizer-tokens
+     tokens
+     (list (%make-tokenizer-token-spec :type :comment :value "/* unclosed")))))
+
+(it-sequential "tokenizer-rule-ordering-test"
   (let* ((tokenizer (%make-arrow-tokenizer))
          (tokens (tokenize-string "-> target" tokenizer)))
     (assert-tokenizer-tokens

@@ -265,8 +265,8 @@ check_contains MAINTAINERS.md "sbcl --script scripts/run-tests.lisp" \
   "MAINTAINERS preserves the raw-checkout verification baseline"
 check_contains MAINTAINERS.md "SECURITY.md" \
   "MAINTAINERS points urgent incidents at the security policy"
-check_contains ROADMAP.md "repository-level CI" \
-  "ROADMAP keeps CI as an explicit remaining gap"
+check_contains ROADMAP.md "nix flake check" \
+  "ROADMAP records the reproducible CI verification path"
 check_contains CHANGELOG.md "## Unreleased" \
   "CHANGELOG keeps an Unreleased section"
 

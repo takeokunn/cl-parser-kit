@@ -1,6 +1,6 @@
 (in-package :cl-parser-kit/test)
 
-(deftest-case pratt-all-rejects-trailing-token-test
+(it-sequential "pratt-all-rejects-trailing-token-test"
   (let* ((trailing (make-token :type :number :text "2"
                                :value 2
                                :span (make-span :start 4 :end 5)))
@@ -11,11 +11,11 @@
     (with-pratt-plus-table (table)
       (assert-pratt-failure-values (parse-pratt-all tokens table)
           (value next failure)
-        (assert-equal 3 next)
-        (assert-equal :eoi (parse-failure-expected failure))
-        (assert-equal trailing (parse-failure-actual failure))))))
+        (expect next :to-equal 3)
+        (expect (parse-failure-expected failure) :to-equal :eoi)
+        (expect (parse-failure-actual failure) :to-equal trailing)))))
 
-(deftest-case pratt-all-trailing-token-falls-back-to-token-offsets-test
+(it-sequential "pratt-all-trailing-token-falls-back-to-token-offsets-test"
   (let* ((trailing (make-token :type :number :text "2"
                                :value 2
                                :start 4
@@ -27,20 +27,20 @@
     (with-pratt-plus-table (table)
       (assert-pratt-failure-values (parse-pratt-all tokens table)
           (value next failure)
-        (assert-equal 3 next)
+        (expect next :to-equal 3)
         (let* ((diagnostic (first (parse-failure-diagnostics failure)))
                (rendered (diagnostic->string diagnostic)))
-          (assert-true diagnostic)
-          (assert-true (search "Unexpected trailing token" rendered))
-          (assert-true (search "1:5-1:6" rendered)))))))
+          (expect diagnostic :to-be-truthy)
+          (expect (search "Unexpected trailing token" rendered) :to-be-truthy)
+          (expect (search "1:5-1:6" rendered) :to-be-truthy))))))
 
-(deftest-case pratt-all-trailing-token-recovers-line-columns-from-metadata-source-test
+(it-sequential "pratt-all-trailing-token-recovers-line-columns-from-metadata-source-test"
   (assert-pratt-failure-values (%run-pratt-trailing-metadata-failure)
       (value next failure)
-    (assert-equal 3 next)
+    (expect next :to-equal 3)
     (let* ((diagnostic (first (parse-failure-diagnostics failure)))
            (rendered (diagnostic->string diagnostic)))
       (%assert-diagnostic-span diagnostic 2 1 2 2)
-      (assert-true (search "Unexpected trailing token" rendered))
-      (assert-true (search "2:1-2:2" rendered))
-      (assert-true (search "  | 2" rendered)))))
+      (expect (search "Unexpected trailing token" rendered) :to-be-truthy)
+      (expect (search "2:1-2:2" rendered) :to-be-truthy)
+      (expect (search "  | 2" rendered) :to-be-truthy))))

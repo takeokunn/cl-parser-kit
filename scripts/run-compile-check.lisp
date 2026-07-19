@@ -9,6 +9,5 @@
 (let ((project-root (current-project-root)))
   (require :asdf)
   (load-project-asd-definitions project-root)
-  (package-symbol-call :cl-user :load-project-sources project-root)
-  (package-symbol-call :cl-user :load-project-tests project-root)
+  (package-symbol-call :cl-user :compile-project-tests project-root)
   (format t "~&PASS compile check~%"))

@@ -4,10 +4,10 @@
  (readme-tokenizer-quick-start-test
   (let* ((tokenizer (make-expression-example-tokenizer))
          (tokens (tokenize-string "sum + 42" tokenizer)))
-    (assert-equal 3 (length tokens))
-    (assert-equal :identifier (token-type (aref tokens 0)))
-    (assert-equal :plus (token-type (aref tokens 1)))
-    (assert-equal 42 (token-value (aref tokens 2)))))
+    (expect (length tokens) :to-equal 3)
+    (expect (token-type (aref tokens 0)) :to-equal :identifier)
+    (expect (token-type (aref tokens 1)) :to-equal :plus)
+    (expect (token-value (aref tokens 2)) :to-equal 42)))
  (readme-tokenizer-customization-snippet-test
   (assert-dsl-sample-tokens))
  (token-stream-example-workflow-test
@@ -20,9 +20,9 @@
     (assert-example-failure
      (parse-all parser tokens)
      (value next failure)
-      (assert-equal 3 next)
-      (assert-true failure)
-      (assert-equal :identifier (token-type (parse-failure-actual failure)))
+      (expect next :to-equal 3)
+      (expect failure :to-be-truthy)
+      (expect (token-type (parse-failure-actual failure)) :to-equal :identifier)
       (assert-string-contains-all
        (parse-failure->string failure)
        '("Unexpected trailing token"
@@ -45,11 +45,11 @@
     (assert-example-successes
      ((parse-source parser "let (answer, result, total);" tokenizer)
       (value next failure)
-      (assert-equal 9 next)
-      (assert-equal 3 (length (first value)))
-      (assert-equal "answer" (token-text (first (first value))))
-      (assert-equal "result" (token-text (second (first value))))
-      (assert-equal "total" (token-text (third (first value))))))))
+      (expect next :to-equal 9)
+      (expect (length (first value)) :to-equal 3)
+      (expect (token-text (first (first value))) :to-equal "answer")
+      (expect (token-text (second (first value))) :to-equal "result")
+      (expect (token-text (third (first value))) :to-equal "total")))))
  (readme-pratt-quick-start-test
   (let ((tokens (vector (make-token :type :number :text "1" :value 1)
                         (make-token :type :plus :text "+")
@@ -60,8 +60,8 @@
       (assert-example-success
        (parse-pratt-all tokens table)
        (value next failure)
-        (assert-equal 4 next)
-        (assert-equal '(:add 1 (:fact 2)) value)))))
+        (expect next :to-equal 4)
+        (expect value :to-equal '(:add 1 (:fact 2)))))))
  (api-guide-parser-primitives-snippet-test
   (let ((parser (seq
                  (type-token :identifier)
@@ -73,21 +73,21 @@
        (vector (make-token :type :identifier :text "answer" :value "answer")
                (make-token :type :number :text "42" :value 42)))
       (value next failure)
-      (assert-equal 2 next)
-      (assert-equal 3 (length value))
-      (assert-equal :identifier (token-type (first value)))
-      (assert-equal "answer" (token-text (first value)))
-      (assert-equal :number (token-type (second value)))
-      (assert-equal 42 (token-value (second value))))
+      (expect next :to-equal 2)
+      (expect (length value) :to-equal 3)
+      (expect (token-type (first value)) :to-equal :identifier)
+      (expect (token-text (first value)) :to-equal "answer")
+      (expect (token-type (second value)) :to-equal :number)
+      (expect (token-value (second value)) :to-equal 42))
      ((parse-tokens
        parser
        (vector (make-token :type :identifier :text "answer" :value "answer")))
       (value next failure)
-      (assert-equal 1 next)
-      (assert-equal 3 (length value))
-      (assert-equal :identifier (token-type (first value)))
-      (assert-equal "answer" (token-text (first value)))
-      (assert-equal nil (second value))))))
+      (expect next :to-equal 1)
+      (expect (length value) :to-equal 3)
+      (expect (token-type (first value)) :to-equal :identifier)
+      (expect (token-text (first value)) :to-equal "answer")
+      (expect (second value) :to-equal nil)))))
  (api-guide-label-snippet-test
   (let ((parser
           (label
@@ -97,9 +97,9 @@
      (parse-tokens parser
                    (vector (make-token :type :equals :text "=")))
      (value next failure)
-      (assert-equal 0 next)
-      (assert-equal :binding-name (parse-failure-expected failure))
-      (assert-equal :equals (token-type (parse-failure-actual failure))))))
+      (expect next :to-equal 0)
+      (expect (parse-failure-expected failure) :to-equal :binding-name)
+      (expect (token-type (parse-failure-actual failure)) :to-equal :equals))))
   (readme-delimited-list-snippet-test
    (let* ((tokenizer (make-let-example-tokenizer))
           (parser (seq
@@ -115,7 +115,7 @@
      (assert-example-success
       (parse-source parser "let (answer, result);" tokenizer)
       (value next failure)
-       (assert-equal 7 next)
-       (assert-equal 2 (length (first value)))
-       (assert-equal "answer" (token-text (first (first value))))
-       (assert-equal "result" (token-text (second (first value))))))))
+       (expect next :to-equal 7)
+       (expect (length (first value)) :to-equal 2)
+       (expect (token-text (first (first value))) :to-equal "answer")
+       (expect (token-text (second (first value))) :to-equal "result")))))

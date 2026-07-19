@@ -41,9 +41,8 @@
      (declare (ignore next))
      (%success value position result))
    (lambda (result next)
-     (declare (ignore next))
      (values nil nil
-             position
+             next
              (%copy-parse-failure result :committed-p nil)))))
 
 (define-parser-function not-followed-by (parser) :not-followed-by
@@ -63,7 +62,7 @@
      (%success t position (parse-failure-diagnostics failure)))))
 
 (defun between (open parser close)
-  (%keep-left open (%keep-left parser close)))
+  (%keep-right open (%keep-left parser close)))
 
 (define-delimited-separated-parser delimited-sep-by1 sep-by1)
 

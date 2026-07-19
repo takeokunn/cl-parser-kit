@@ -1,6 +1,7 @@
 (in-package :cl-user)
 
-;; Example Pratt setup for `1 + 2!`.
+;; Example Pratt setup for `1 + 2!` (addition with a higher-precedence
+;; postfix factorial): parses to (:add 1 (:fact 2)).
 
 (defun parse-postfix-precedence-example ()
   (let* ((table (cl-parser-kit:make-pratt-table))

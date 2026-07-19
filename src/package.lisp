@@ -118,6 +118,7 @@
    ;; pratt parsing
    #:pratt-table
    #:make-pratt-table
+   #:*maximum-pratt-recursion-depth*
    #:pratt-prefix-entry
    #:pratt-infix-entry
    #:pratt-postfix-entry
@@ -149,11 +150,4 @@
    #:cst-node-children
    #:cst-node-span
    #:cst-node-data
-   #:cst-node->sexp
-   ;; testing
-   #:deftest-case
-   #:run-tests
-   #:assert-equal
-   #:assert-true
-   #:assert-false
-   #:assert-signals))
+   #:cst-node->sexp))

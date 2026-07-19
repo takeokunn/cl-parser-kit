@@ -1,6 +1,6 @@
 (in-package :cl-parser-kit/test)
 
-(deftest-case tokenizer-basic
+(it-sequential "tokenizer-basic"
   (let* ((tokenizer (make-tokenizer :rules (%basic-tokenizer-rules)))
          (tokens (tokenize-string "sum + 42" tokenizer)))
     (assert-tokenizer-tokens
@@ -9,7 +9,7 @@
            (%make-tokenizer-token-spec :type :plus :value "+")
            (%make-tokenizer-token-spec :type :number :value 42)))))
 
-(deftest-case tokenizer-unknown-and-span-test
+(it-sequential "tokenizer-unknown-and-span-test"
   (let* ((tokenizer (make-tokenizer :rules (%number-only-tokenizer-rules)))
          (tokens (tokenize "1
 ?" tokenizer)))

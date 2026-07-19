@@ -15,9 +15,9 @@
             (make-token :type :equals :text "=")
             (make-token :type :number :text "42" :value 42)))
    (value next failure)
-   (assert-equal 3 next)
-   (assert-equal "answer" (token-text (first value)))
-   (assert-equal 42 (token-value (third value)))))
+   (expect next :to-equal 3)
+   (expect (token-text (first value)) :to-equal "answer")
+   (expect (token-value (third value)) :to-equal 42)))
  (examples-guide-tokenize-dsl-flavored-source-snippet-test
   (assert-dsl-sample-tokens))
  (examples-guide-parse-tokens-snippet-failure-test
@@ -33,11 +33,10 @@
     (vector (make-token :type :number :text "42" :value 42)))
    (ok value next failure)
    (declare (ignore ok value next))
-   (assert-false ok)
-   (assert-equal 0 (parse-failure-position failure))
-   (assert-equal :binding-name (parse-failure-expected failure))
-   (assert-equal :number
-                 (token-type (parse-failure-actual failure)))))
+   (expect ok :to-be-falsy)
+   (expect (parse-failure-position failure) :to-equal 0)
+   (expect (parse-failure-expected failure) :to-equal :binding-name)
+   (expect (token-type (parse-failure-actual failure)) :to-equal :number)))
  (examples-guide-shape-failure-snippet-test
   (assert-example-shape-failure-snippet))
  (examples-guide-operator-chain-snippet-test
@@ -63,19 +62,19 @@
     (assert-example-successes
      ((parse-source subtract-parser "10 - 3 - 2" tokenizer)
       (value next failure)
-      (assert-equal 5 next)
-      (assert-equal 5 value))
+      (expect next :to-equal 5)
+      (expect value :to-equal 5))
      ((parse-source power-parser "2 ^ 3 ^ 2" tokenizer)
       (value next failure)
-      (assert-equal 5 next)
-      (assert-equal 512 value)))))
+      (expect next :to-equal 5)
+      (expect value :to-equal 512)))))
  (examples-guide-project-token-text-and-values-snippet-test
   (with-punctuated-example-parsers (tokenizer group-parser binding-parser)
     (assert-example-successes
      ((parse-source group-parser "(answer, result);" tokenizer)
       (value next failure)
-      (assert-equal 6 next)
-      (assert-equal '("answer" "result") value))
+      (expect next :to-equal 6)
+      (expect value :to-equal '("answer" "result")))
      ((parse-tokens
        binding-parser
        (vector (make-token :type :identifier :text "answer")
@@ -83,8 +82,8 @@
                (make-token :type :number :text "42" :value 42)
                (make-token :type :semicolon :text ";")))
       (value next failure)
-      (assert-equal 4 next)
-      (assert-equal '("answer" :assign 42) value)))))
+      (expect next :to-equal 4)
+      (expect value :to-equal '("answer" :assign 42))))))
  (examples-guide-render-failure-from-external-tokens-snippet-test
   (let* ((source "answer
 +")
@@ -106,7 +105,7 @@
              (if ok
                  :ok
                  (parse-failure->string failure)))))
-    (assert-true (stringp rendered))
+    (expect (stringp rendered) :to-be-truthy)
     (assert-string-contains-all
      rendered
      '("Unexpected trailing token"
@@ -126,10 +125,10 @@
     (assert-example-success
      (parse-source parser "let (answer, result, total);" tokenizer)
      (value next failure)
-     (assert-equal 9 next)
-     (assert-equal "answer" (token-text (first (second value))))
-     (assert-equal "result" (token-text (second (second value))))
-     (assert-equal "total" (token-text (third (second value)))))))
+     (expect next :to-equal 9)
+     (expect (token-text (first (second value))) :to-equal "answer")
+     (expect (token-text (second (second value))) :to-equal "result")
+     (expect (token-text (third (second value))) :to-equal "total"))))
  (examples-guide-render-parse-failure-snippet-test
   (with-pratt-diagnostic-context (tokenizer table)
     (assert-pratt-failure-rendering ("1 + +" tokenizer table)
@@ -158,11 +157,10 @@
                                             (make-cst-node :type :number :value "42")
                                             (make-cst-node :type :punctuation :value ";")))))
                   (cst-node->sexp cst))))))
-      (assert-equal '(:type :binding
+      (expect result :to-equal '(:type :binding
                       :value nil
                       :children ((:type :keyword :value "let" :children ())
                                  (:type :identifier :value "answer" :children ())
                                  (:type :punctuation :value "=" :children ())
                                  (:type :number :value "42" :children ())
-                                 (:type :punctuation :value ";" :children ())))
-                    result)))))
+                                 (:type :punctuation :value ";" :children ()))))))))

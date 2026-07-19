@@ -28,37 +28,20 @@
 (defmacro assert-tokenizer-tokens (tokens expected-specs)
   `(let ((actual-tokens ,tokens)
          (expected-token-specs ,expected-specs))
-     (assert-equal (length expected-token-specs) (length actual-tokens))
+     (expect (length actual-tokens) :to-equal (length expected-token-specs))
      (loop for expected in expected-token-specs
            for index from 0
            for token = (aref actual-tokens index)
-           do (assert-equal (getf expected :type)
-                            (token-type token)
-                            "Unexpected token type at index ~D"
-                            index)
+           do (expect (token-type token) :to-equal (getf expected :type))
               (when (member :text expected)
-                (assert-equal (getf expected :text)
-                              (token-text token)
-                              "Unexpected token text at index ~D"
-                              index))
+                (expect (token-text token) :to-equal (getf expected :text)))
               (when (member :value expected)
-                (assert-equal (getf expected :value)
-                              (token-value token)
-                              "Unexpected token value at index ~D"
-                              index))
+                (expect (token-value token) :to-equal (getf expected :value)))
               (when (member :span expected)
                 (destructuring-bind (start-line start-column end-line end-column)
                     (getf expected :span)
                   (let ((span (token-span token)))
-                    (assert-equal start-line (span-start-line span)
-                                  "Unexpected span start line at index ~D"
-                                  index)
-                    (assert-equal start-column (span-start-column span)
-                                  "Unexpected span start column at index ~D"
-                                  index)
-                    (assert-equal end-line (span-end-line span)
-                                  "Unexpected span end line at index ~D"
-                                  index)
-                    (assert-equal end-column (span-end-column span)
-                                  "Unexpected span end column at index ~D"
-                                  index)))))))
+                    (expect (span-start-line span) :to-equal start-line)
+                    (expect (span-start-column span) :to-equal start-column)
+                    (expect (span-end-line span) :to-equal end-line)
+                    (expect (span-end-column span) :to-equal end-column)))))))

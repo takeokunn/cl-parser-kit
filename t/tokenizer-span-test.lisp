@@ -1,6 +1,6 @@
 (in-package :cl-parser-kit/test)
 
-(deftest-case tokenizer-span-tracks-crlf-lines-test
+(it-sequential "tokenizer-span-tracks-crlf-lines-test"
   (let* ((tokenizer (make-tokenizer :rules (%number-only-tokenizer-rules)))
          (tokens (tokenize (format nil "1~C~C?"
                                    #\Return
@@ -14,7 +14,7 @@
                                        :text "?"
                                        :span '(2 1 2 2))))))
 
-(deftest-case tokenizer-comment-rules-test
+(it-sequential "tokenizer-comment-rules-test"
   (let* ((line-tokenizer (make-tokenizer :rules (%skip-line-comment-tokenizer-rules)))
          (block-tokenizer (make-tokenizer :rules (%skip-block-comment-tokenizer-rules)))
          (line-tokens (tokenize "foo ; ignore me

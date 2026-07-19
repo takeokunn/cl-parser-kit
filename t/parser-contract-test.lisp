@@ -1,6 +1,6 @@
 (in-package :cl-parser-kit/test)
 
-(deftest-case public-parser-entry-points-are-exported-test
+(it-sequential "public-parser-entry-points-are-exported-test"
   (dolist (name '(seq
                   alt
                   opt
@@ -12,10 +12,10 @@
                   parse-pratt-source))
     (multiple-value-bind (symbol status)
         (find-symbol (symbol-name name) :cl-parser-kit)
-      (assert-true symbol)
-      (assert-equal :external status))))
+      (expect symbol :to-be-truthy)
+      (expect status :to-equal :external))))
 
-(deftest-case api-guide-documents-all-exported-symbols-test
+(it-sequential "api-guide-documents-all-exported-symbols-test"
   (let* ((documented
            (remove-if (lambda (line) (string= line ""))
                       (uiop:split-string
@@ -34,4 +34,4 @@
          (missing (loop for name in exported
                         unless (member name documented :test #'string=)
                         collect name)))
-    (assert-equal '() missing "API.md is missing exported symbols")))
+    (expect missing :to-equal '())))

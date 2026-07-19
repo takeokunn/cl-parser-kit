@@ -95,11 +95,22 @@ that checkout.
 
 ## Verification
 
-From a raw checkout, run the full suite with:
+From a repository checkout on a supported Linux system, run the full suite
+with:
 
 ```sh
-sbcl --script scripts/run-tests.lisp
+nix flake check
 ```
+
+This resolves the pinned `cl-weave` and `cl-prolog` test dependencies, runs
+the full suite, generates the coverage report, and checks Lisp structure with
+`paredit-cli`.
+
+The flake exposes checks for `x86_64-linux` and `aarch64-linux`. GitHub
+Actions runs the `x86_64-linux` baseline on `ubuntu-latest`. CI optionally
+pulls from the Cachix cache named by the `CACHIX_CACHE` repository variable,
+and enables pushes only when the `CACHIX_AUTH_TOKEN` secret is also
+configured; the checks still run without a configured cache.
 
 To prove both ASD systems compile cleanly from the same raw checkout before
 running behavior tests, run:
@@ -700,7 +711,7 @@ The exported surface is grouped by concern:
 - external-token fallback diagnostics are covered in [`examples/external-token-diagnostic-example.lisp`](./examples/external-token-diagnostic-example.lisp)
 - Pratt parsing: `make-pratt-table`, `register-*operator`, `parse-pratt`, `parse-pratt-all`, `parse-pratt-source`
 - tree helpers: `make-ast-node`, `make-cst-node`, `ast-node->sexp`, `cst-node->sexp`
-- test helpers: `deftest-case`, `run-tests`
+- test execution: `asdf:test-system "cl-parser-kit-test"` or `sbcl --script scripts/run-tests.lisp`
 
 For exact exports, see [`src/package.lisp`](./src/package.lisp).
 
@@ -748,24 +759,11 @@ reproducible SBCL command is:
 sbcl --script scripts/run-tests.lisp
 ```
 
-The suite also covers the representative README and `EXAMPLES.md` workflows so
-public snippets stay executable as the library evolves. Example files under
-`examples/` are treated the same way and should remain loadable from a fresh
-image. The raw-checkout scripts load the repository sources directly after
-registering the ASD metadata, so they remain usable even when the checkout is
-not already on ASDF's search path.
-
-For raw-checkout reruns with a narrower scope, `scripts/run-tests.lisp` accepts
-either a single substring filter or `--filter SUBSTRING`:
-
-```sh
-sbcl --script scripts/run-tests.lisp run-tests-supports-string-filter-test
-sbcl --script scripts/run-tests.lisp --filter pratt-all-trailing-token
-```
-
-For narrower local verification from a loaded image, `cl-parser-kit:run-tests`
-also accepts `:filter` and `:stream`. `:filter` may be a case-insensitive
-substring, an exact test symbol, or a predicate on the test name symbol.
+The suite is defined with `cl-weave`; parser-table invariants are additionally
+checked as executable `cl-prolog/weave` queries. It also covers the
+representative README and `EXAMPLES.md` workflows so public snippets stay
+executable as the library evolves. Example files under `examples/` are treated
+the same way and should remain loadable from a fresh image.
 
 ## Design Non-Goals
 

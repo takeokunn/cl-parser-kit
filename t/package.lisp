@@ -1,13 +1,13 @@
 (defpackage :cl-parser-kit/test
-  (:use :cl :cl-parser-kit))
+  (:use :cl :cl-parser-kit :cl-weave)
+  (:shadowing-import-from :cl-weave #:describe))
 
 (in-package :cl-parser-kit/test)
 
 (defmacro assert-rendered-contains-all (form snippets)
   `(let ((rendered ,form))
      (dolist (snippet ,snippets)
-       (unless (search snippet rendered)
-         (error "Rendered text does not contain ~S.~%~A" snippet rendered)))
+       (expect (search snippet rendered) :to-be-truthy))
      rendered))
 
 (defmacro %assert-multiple-values (form (ok value next failure) &body assertions)
@@ -16,22 +16,32 @@
      ,@assertions))
 
 (defmacro %assert-success-values (form (value next failure) &body assertions)
-  `(%assert-multiple-values ,form (ok ,value ,next ,failure)
-     (declare (ignorable ,failure))
-     (assert-true ok)
-     ,@assertions))
+  (let ((declarations (loop while (and assertions
+                                        (consp (first assertions))
+                                        (eq (first (first assertions)) 'declare))
+                            collect (pop assertions))))
+    `(%assert-multiple-values ,form (ok ,value ,next ,failure)
+       (declare (ignorable ,failure))
+       ,@declarations
+       (expect ok :to-be-truthy)
+       ,@assertions)))
 
 (defmacro %assert-failure-values (form (value next failure) &body assertions)
-  `(%assert-multiple-values ,form (ok ,value ,next ,failure)
-     (declare (ignorable ,value ,failure))
-     (assert-false ok)
-     (assert-false ,value)
-     ,@assertions))
+  (let ((declarations (loop while (and assertions
+                                        (consp (first assertions))
+                                        (eq (first (first assertions)) 'declare))
+                            collect (pop assertions))))
+    `(%assert-multiple-values ,form (ok ,value ,next ,failure)
+       (declare (ignorable ,value ,failure))
+       ,@declarations
+       (expect ok :to-be-falsy)
+       (expect ,value :to-be-falsy)
+       ,@assertions)))
 
 (defun %assert-diagnostic-span (diagnostic start-line start-column end-line end-column)
   (let ((span (diagnostic-span diagnostic)))
-    (assert-true diagnostic)
-    (assert-equal start-line (span-start-line span))
-    (assert-equal start-column (span-start-column span))
-    (assert-equal end-line (span-end-line span))
-    (assert-equal end-column (span-end-column span))))
+    (expect diagnostic :to-be-truthy)
+    (expect (span-start-line span) :to-equal start-line)
+    (expect (span-start-column span) :to-equal start-column)
+    (expect (span-end-line span) :to-equal end-line)
+    (expect (span-end-column span) :to-equal end-column)))

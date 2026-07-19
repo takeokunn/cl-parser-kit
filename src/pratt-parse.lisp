@@ -1,5 +1,27 @@
 (in-package :cl-parser-kit)
 
+(defparameter *maximum-pratt-recursion-depth* 4000
+  "Maximum recursion PARSE-PRATT performs before yielding a parse failure
+instead of exhausting the control stack. This bounds hostile input so it fails
+gracefully rather than crashing the process. The count grows with both nested
+depth (e.g. thousands of leading prefix operators or parentheses) AND the length
+of a flat operator chain (each infix operator's right operand recurses), so an
+expression with more than this many operators fails with a
+`:maximum-recursion-depth` failure even when it is not deeply nested. Rebind or
+SETF to raise it for intentionally large or deep expressions.")
+
+(defvar *pratt-recursion-depth* 0
+  "Current Pratt recursion depth; bound dynamically during a parse.")
+
+(defun %pratt-depth-exceeded-failure (position)
+  (make-parse-failure
+   :position position
+   :expected :maximum-recursion-depth
+   :actual nil
+   :diagnostics (list (error-diagnostic
+                       (format nil "Maximum expression depth ~D exceeded"
+                               *maximum-pratt-recursion-depth*)))))
+
 (defun %token-key (token)
   (or (token-type token) (token-text token)))
 
@@ -114,8 +136,11 @@
              (funcall failure position (%pratt-error position token :prefix))))))))
 
 (defun %pratt-parse/cps (tokens table position min-binding-power success failure)
-  (%pratt-start-expression/cps
-   tokens table position min-binding-power success failure))
+  (if (>= *pratt-recursion-depth* *maximum-pratt-recursion-depth*)
+      (funcall failure position (%pratt-depth-exceeded-failure position))
+      (let ((*pratt-recursion-depth* (1+ *pratt-recursion-depth*)))
+        (%pratt-start-expression/cps
+         tokens table position min-binding-power success failure))))
 
 (defun parse-pratt (tokens table &key (position 0) (min-binding-power 0))
   "Parse an expression from TOKENS using TABLE."
