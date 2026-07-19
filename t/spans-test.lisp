@@ -1,35 +1,35 @@
 (in-package :cl-parser-kit/test)
 
-(deftest-case span-merge-test
+(it-sequential "span-merge-test"
   (let ((left (make-span :start 0 :end 3 :start-line 1 :start-column 1 :end-line 1 :end-column 4))
         (right (make-span :start 3 :end 6 :start-line 1 :start-column 4 :end-line 1 :end-column 7)))
     (let ((merged (span-merge left right)))
-      (assert-equal 0 (span-start merged))
-      (assert-equal 6 (span-end merged)))))
+      (expect (span-start merged) :to-equal 0)
+      (expect (span-end merged) :to-equal 6))))
 
-(deftest-case span-length-and-empty-test
+(it-sequential "span-length-and-empty-test"
   (let ((empty (make-span :start 3 :end 3))
         (non-empty (make-span :start 2 :end 5)))
-    (assert-true (span-empty-p empty))
-    (assert-equal 0 (span-length empty))
-    (assert-false (span-empty-p non-empty))
-    (assert-equal 3 (span-length non-empty))))
+    (expect (span-empty-p empty) :to-be-truthy)
+    (expect (span-length empty) :to-equal 0)
+    (expect (span-empty-p non-empty) :to-be-falsy)
+    (expect (span-length non-empty) :to-equal 3)))
 
-(deftest-case span-public-accessor-contract-test
+(it-sequential "span-public-accessor-contract-test"
   (let ((span (make-span :source "abc"
                          :start 2 :end 5
                          :start-line 1 :start-column 3
                          :end-line 1 :end-column 6)))
-    (assert-true (typep span 'span))
-    (assert-equal "abc" (span-source span))
-    (assert-equal 2 (span-start span))
-    (assert-equal 5 (span-end span))
-    (assert-equal 1 (span-start-line span))
-    (assert-equal 3 (span-start-column span))
-    (assert-equal 1 (span-end-line span))
-    (assert-equal 6 (span-end-column span))))
+    (expect (typep span 'span) :to-be-truthy)
+    (expect (span-source span) :to-equal "abc")
+    (expect (span-start span) :to-equal 2)
+    (expect (span-end span) :to-equal 5)
+    (expect (span-start-line span) :to-equal 1)
+    (expect (span-start-column span) :to-equal 3)
+    (expect (span-end-line span) :to-equal 1)
+    (expect (span-end-column span) :to-equal 6)))
 
-(deftest-case advance-position-treats-crlf-as-single-line-break-test
+(it-sequential "advance-position-treats-crlf-as-single-line-break-test"
   (multiple-value-bind (line column)
       (cl-parser-kit::advance-position (format nil "a~C~Cb"
                                                #\Return
@@ -38,5 +38,5 @@
                                        4
                                        1
                                        1)
-    (assert-equal 2 line)
-    (assert-equal 2 column)))
+    (expect line :to-equal 2)
+    (expect column :to-equal 2)))

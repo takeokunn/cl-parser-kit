@@ -1,33 +1,33 @@
 (in-package :cl-parser-kit/test)
 
-(deftest-case token-struct-roundtrip
+(it-sequential "token-struct-roundtrip"
   (let* ((span (make-span :start 0 :end 4))
          (token (make-token :type :identifier :text "name" :value "name"
                             :start 0
                             :end 4
                             :metadata '(:source :test)
                             :span span)))
-    (assert-true (typep token 'token))
-    (assert-equal :identifier (token-type token))
-    (assert-equal "name" (token-text token))
-    (assert-equal "name" (token-value token))
-    (assert-equal '(:source :test) (token-metadata token))
-    (assert-equal 0 (token-start token))
-    (assert-equal 4 (token-end token))
-    (assert-equal span (token-span token))
-    (assert-true (typep span 'span))))
+    (expect (typep token 'token) :to-be-truthy)
+    (expect (token-type token) :to-equal :identifier)
+    (expect (token-text token) :to-equal "name")
+    (expect (token-value token) :to-equal "name")
+    (expect (token-metadata token) :to-equal '(:source :test))
+    (expect (token-start token) :to-equal 0)
+    (expect (token-end token) :to-equal 4)
+    (expect (token-span token) :to-equal span)
+    (expect (typep span 'span) :to-be-truthy)))
 
-(deftest-case token-effective-span-derives-from-offset-and-source-test
+(it-sequential "token-effective-span-derives-from-offset-and-source-test"
   (let* ((token (make-token :type :identifier
                             :text "name"
                             :start 4
                             :end 8
                             :metadata '(:source "foo name")))
          (span (token-span token)))
-    (assert-true (typep span 'span))
-    (assert-equal 4 (span-start span))
-    (assert-equal 8 (span-end span))
-    (assert-equal 1 (span-start-line span))
-    (assert-equal 5 (span-start-column span))
-    (assert-equal 1 (span-end-line span))
-    (assert-equal 9 (span-end-column span))))
+    (expect (typep span 'span) :to-be-truthy)
+    (expect (span-start span) :to-equal 4)
+    (expect (span-end span) :to-equal 8)
+    (expect (span-start-line span) :to-equal 1)
+    (expect (span-start-column span) :to-equal 5)
+    (expect (span-end-line span) :to-equal 1)
+    (expect (span-end-column span) :to-equal 9)))

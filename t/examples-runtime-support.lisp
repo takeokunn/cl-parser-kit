@@ -62,13 +62,13 @@
 
 (defun assert-dsl-sample-tokens (&optional tokens)
   (let ((tokens (or tokens (tokenize-dsl-sample-source))))
-    (assert-equal 4 (length tokens))
-    (assert-equal :if (token-type (aref tokens 0)))
-    (assert-equal "$value" (token-value (aref tokens 1)))
-    (assert-equal :string (token-type (aref tokens 2)))
-    (assert-equal "ok" (token-value (aref tokens 2)))
-    (assert-equal :identifier (token-type (aref tokens 3)))
-    (assert-equal "if?" (token-value (aref tokens 3)))))
+    (expect (length tokens) :to-equal 4)
+    (expect (token-type (aref tokens 0)) :to-equal :if)
+    (expect (token-value (aref tokens 1)) :to-equal "$value")
+    (expect (token-type (aref tokens 2)) :to-equal :string)
+    (expect (token-value (aref tokens 2)) :to-equal "ok")
+    (expect (token-type (aref tokens 3)) :to-equal :identifier)
+    (expect (token-value (aref tokens 3)) :to-equal "if?")))
 
 (defun make-diagnostic-sample ()
   (error-diagnostic
@@ -90,7 +90,7 @@
   (diagnostic->string (make-diagnostic-sample)))
 
 (defun assert-diagnostic-sample-rendering (&optional (rendered (render-diagnostic-sample)))
-  (assert-true (stringp rendered))
+  (expect (stringp rendered) :to-be-truthy)
   (assert-string-contains-all
    rendered
    '("bad token"

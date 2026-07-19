@@ -1,6 +1,6 @@
 (in-package :cl-parser-kit/test)
 
-(deftest-case tokenizer-line-comment-rule-stops-at-carriage-return-test
+(it-sequential "tokenizer-line-comment-rule-stops-at-carriage-return-test"
   (let* ((skip-tokenizer (make-tokenizer :rules (%skip-line-comment-tokenizer-rules)))
          (visible-tokenizer
            (%make-line-comment-tokenizer :skip-p nil :value-function #'length))
@@ -23,7 +23,7 @@
                                        :value 42
                                        :span '(2 1 2 3))))))
 
-(deftest-case tokenizer-whitespace-rule-trims-page-characters-test
+(it-sequential "tokenizer-whitespace-rule-trims-page-characters-test"
   (let* ((tokenizer (make-tokenizer
                      :rules (list (make-whitespace-rule :skip-p nil)
                                   (make-number-rule))))

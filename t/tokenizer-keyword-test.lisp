@@ -1,6 +1,6 @@
 (in-package :cl-parser-kit/test)
 
-(deftest-case tokenizer-keyword-rule-boundary-test
+(it-sequential "tokenizer-keyword-rule-boundary-test"
   (let* ((tokenizer (%make-let-keyword-tokenizer))
          (tokens (tokenize-string "let lets outlet let2" tokenizer)))
     (assert-tokenizer-tokens
@@ -10,7 +10,7 @@
            (%make-tokenizer-token-spec :type :identifier :value "outlet")
            (%make-tokenizer-token-spec :type :identifier :value "let2")))))
 
-(deftest-case tokenizer-keyword-rule-punctuation-test
+(it-sequential "tokenizer-keyword-rule-punctuation-test"
   (let* ((tokenizer (%make-let-keyword-tokenizer :include-lparen-p t))
          (tokens (tokenize-string "let (value" tokenizer)))
     (assert-tokenizer-tokens
@@ -19,7 +19,7 @@
            (%make-tokenizer-token-spec :type :lparen :value "(")
            (%make-tokenizer-token-spec :type :identifier :value "value")))))
 
-(deftest-case tokenizer-keyword-rule-supports-custom-identifier-boundaries-test
+(it-sequential "tokenizer-keyword-rule-supports-custom-identifier-boundaries-test"
   (let* ((tokenizer (%make-custom-boundary-keyword-tokenizer))
          (tokens (tokenize-string "if if? maybe?" tokenizer)))
     (assert-tokenizer-tokens

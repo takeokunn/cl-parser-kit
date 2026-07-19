@@ -1,6 +1,12 @@
 (in-package :cl-parser-kit/test)
 
-(deftest-case combinator-sep-by1-test
+(defparameter *single-foo-token-vector* (vector (make-token :type :identifier :text "foo")
+                         (make-token :type :comma :text ",")
+                         (make-token :type :identifier :text "bar")
+                         (make-token :type :comma :text ",")
+                         (make-token :type :identifier :text "baz")))
+
+(it-sequential "combinator-sep-by1-test"
   (let* ((tokens *single-foo-token-vector*)
          (parser (sep-by1 (type-token :identifier)
                           (type-token :comma))))
@@ -10,7 +16,7 @@
         '("foo" "bar" "baz")
         #'token-text)))
 
-(deftest-case combinator-sep-by-test
+(it-sequential "combinator-sep-by-test"
   (let* ((tokens (vector (make-token :type :identifier :text "foo")
                          (make-token :type :comma :text ",")
                          (make-token :type :identifier :text "bar")
@@ -27,11 +33,11 @@
     (multiple-value-bind (ok value next failure)
         (parse-tokens parser #())
       (declare (ignore failure))
-      (assert-true ok)
-      (assert-equal '() value)
-      (assert-equal 0 next))))
+      (expect ok :to-be-truthy)
+      (expect value :to-equal '())
+      (expect next :to-equal 0))))
 
-(deftest-case combinator-sep-by-trailing-separator-fails-test
+(it-sequential "combinator-sep-by-trailing-separator-fails-test"
   (let* ((tokens (vector (make-token :type :identifier :text "foo")
                          (make-token :type :comma :text ",")))
          (parser (sep-by1 (type-token :identifier)
@@ -41,7 +47,7 @@
                                          :identifier
                                          :eof)))
 
-(deftest-case combinator-sep-by1-rejects-non-advancing-separator-test
+(it-sequential "combinator-sep-by1-rejects-non-advancing-separator-test"
   (let* ((tokens (vector (make-token :type :identifier :text "foo")))
          (separator-parser (return-parser :separator))
          (parser (sep-by1 (type-token :identifier) separator-parser)))
@@ -50,7 +56,7 @@
                                          :progressing-parser
                                          :return)))
 
-(deftest-case combinator-sep-by-propagates-committed-failure-test
+(it-sequential "combinator-sep-by-propagates-committed-failure-test"
   (let* ((tokens (vector (make-token :type :identifier :text "foo")
                          (make-token :type :comma :text ",")))
          (parser (sep-by (type-token :identifier)
@@ -60,7 +66,7 @@
                                          :identifier
                                          :eof)))
 
-(deftest-case combinator-sep-end-by1-allows-trailing-separator-test
+(it-sequential "combinator-sep-end-by1-allows-trailing-separator-test"
   (let* ((tokens (vector (make-token :type :identifier :text "foo")
                          (make-token :type :comma :text ",")
                          (make-token :type :identifier :text "bar")
@@ -73,7 +79,7 @@
         '("foo" "bar")
         #'token-text)))
 
-(deftest-case combinator-sep-end-by1-rejects-non-advancing-separator-test
+(it-sequential "combinator-sep-end-by1-rejects-non-advancing-separator-test"
   (let* ((tokens (vector (make-token :type :identifier :text "foo")))
          (separator-parser (return-parser :separator))
          (parser (sep-end-by1 (type-token :identifier) separator-parser)))
@@ -82,7 +88,7 @@
                                          :progressing-parser
                                          :return)))
 
-(deftest-case combinator-sep-end-by1-rejects-non-advancing-item-after-separator-test
+(it-sequential "combinator-sep-end-by1-rejects-non-advancing-item-after-separator-test"
   (let* ((tokens (vector (make-token :type :identifier :text "foo")
                          (make-token :type :comma :text ",")))
          (parser (sep-end-by1 (return-parser :item)
@@ -92,14 +98,14 @@
                                          :progressing-parser
                                          :return)))
 
-(deftest-case combinator-sep-end-by-allows-empty-input-test
+(it-sequential "combinator-sep-end-by-allows-empty-input-test"
   (let ((parser (sep-end-by (type-token :identifier)
                             (type-token :comma))))
     (assert-combinator-success (parse-tokens parser #()) (value next failure)
-      (assert-equal '() value)
-      (assert-equal 0 next))))
+      (expect value :to-equal '())
+      (expect next :to-equal 0))))
 
-(deftest-case combinator-sep-end-by1-propagates-committed-failure-test
+(it-sequential "combinator-sep-end-by1-propagates-committed-failure-test"
   (let* ((tokens (vector (make-token :type :identifier :text "foo")
                          (make-token :type :number :text "1" :value 1)
                          (make-token :type :comma :text ",")
@@ -112,46 +118,40 @@
                                          :number
                                          :eof)))
 
-(deftest-case combinator-sep-end-by-preserves-recoverable-diagnostics-test
+(it-sequential "combinator-sep-end-by-preserves-recoverable-diagnostics-test"
   (with-combinator-tokens (tokens *positioned-identifier-comma-token-specs*)
     (let ((parser (sep-end-by (lookahead (seq (type-token :identifier)
                                               (end-of-input)))
                               (type-token :comma))))
       (multiple-value-bind (ok value next diagnostics)
           (run-parser parser tokens 0)
-        (assert-true ok)
-        (assert-equal '() value)
-        (assert-equal 0 next)
+        (expect ok :to-be-truthy)
+        (expect value :to-equal '())
+        (expect next :to-equal 0)
         (%assert-rendered-diagnostic-contains (first diagnostics)
                                               "Unexpected trailing token"
                                               "1:4-1:5")))))
 
-(deftest-case combinator-sep-by-allows-non-consuming-lookahead-failure-test
+(it-sequential "combinator-sep-by-allows-non-consuming-lookahead-failure-test"
   (with-combinator-tokens (tokens *identifier-comma-token-specs*)
     (let ((parser (sep-by (lookahead (seq (type-token :identifier)
                                           (type-token :plus)))
                           (type-token :comma))))
       (assert-combinator-success (parse-tokens parser tokens)
           (value next failure)
-        (assert-equal '() value)
-        (assert-equal 0 next)))))
+        (expect value :to-equal '())
+        (expect next :to-equal 0)))))
 
-(deftest-case combinator-sep-by-preserves-recoverable-diagnostics-test
+(it-sequential "combinator-sep-by-preserves-recoverable-diagnostics-test"
   (with-combinator-tokens (tokens *positioned-identifier-comma-token-specs*)
     (let ((parser (sep-by (lookahead (seq (type-token :identifier)
                                           (end-of-input)))
                           (type-token :comma))))
       (multiple-value-bind (ok value next diagnostics)
           (run-parser parser tokens 0)
-        (assert-true ok)
-        (assert-equal '() value)
-        (assert-equal 0 next)
+        (expect ok :to-be-truthy)
+        (expect value :to-equal '())
+        (expect next :to-equal 0)
         (%assert-single-diagnostic diagnostics
                                    "Unexpected trailing token"
                                    "1:4-1:5")))))
-
-(defconstant *single-foo-token-vector* (vector (make-token :type :identifier :text "foo")
-                         (make-token :type :comma :text ",")
-                         (make-token :type :identifier :text "bar")
-                         (make-token :type :comma :text ",")
-                         (make-token :type :identifier :text "baz")))

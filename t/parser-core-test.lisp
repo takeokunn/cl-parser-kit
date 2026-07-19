@@ -1,6 +1,6 @@
 (in-package :cl-parser-kit/test)
 
-(deftest-case parse-source-test
+(it-sequential "parse-source-test"
   (with-parser-tokens ("answer + 1" *identifier-plus-number-rule-specs*)
       (tokenizer tokens)
     (let ((parser (seq (type-token :identifier)
@@ -8,26 +8,26 @@
                        (type-token :number))))
       (assert-parser-success (parse-tokens parser tokens)
           (value next failure)
-        (assert-equal 3 next)
-        (assert-equal :identifier (token-type (first value)))))))
+        (expect next :to-equal 3)
+        (expect (token-type (first value)) :to-equal :identifier)))))
 
-(deftest-case parse-token-helpers-test
+(it-sequential "parse-token-helpers-test"
   (with-parser-tokens ("answer + 1" *identifier-plus-number-rule-specs*)
       (tokenizer tokens)
     (let ((parser (type-token :identifier)))
       (assert-parser-success (parse-tokens parser tokens)
           (value next failure)
-        (assert-equal 1 next)))
+        (expect next :to-equal 1)))
     (let ((token (peek-token tokens 0)))
-      (assert-equal :identifier (token-type token)))
+      (expect (token-type token) :to-equal :identifier))
     (multiple-value-bind (token next)
         (next-token tokens 0)
-      (assert-equal :identifier (token-type token))
-      (assert-equal 1 next))
-    (assert-false (eof-token-p tokens 0))
-    (assert-true (eof-token-p tokens (length tokens)))))
+      (expect (token-type token) :to-equal :identifier)
+      (expect next :to-equal 1))
+    (expect (eof-token-p tokens 0) :to-be-falsy)
+    (expect (eof-token-p tokens (length tokens)) :to-be-truthy)))
 
-(deftest-case parse-failure-test
+(it-sequential "parse-failure-test"
   (with-parser-tokens ("answer + 1" *identifier-plus-number-rule-specs*)
       (tokenizer tokens)
     (let ((parser (seq (type-token :identifier)
@@ -35,28 +35,28 @@
                        (type-token :plus))))
       (assert-parser-failure (parse-tokens parser tokens)
           (value next failure)
-        (assert-equal 2 next)
-        (assert-equal :plus (parse-failure-expected failure))
-        (assert-equal :number (token-type (parse-failure-actual failure)))))))
+        (expect next :to-equal 2)
+        (expect (parse-failure-expected failure) :to-equal :plus)
+        (expect (token-type (parse-failure-actual failure)) :to-equal :number)))))
 
-(deftest-case parse-source-success-contract-test
+(it-sequential "parse-source-success-contract-test"
   (let* ((tokenizer (%make-parser-tokenizer *identifier-number-rule-specs*))
          (parser (type-token :identifier)))
     (assert-parser-success (parse-source parser "answer" tokenizer)
         (value next failure)
-      (assert-equal 1 next)
-      (assert-equal :identifier (token-type value)))))
+      (expect next :to-equal 1)
+      (expect (token-type value) :to-equal :identifier))))
 
-(deftest-case parse-source-failure-contract-test
+(it-sequential "parse-source-failure-contract-test"
   (let* ((tokenizer (%make-parser-tokenizer *identifier-number-rule-specs*))
          (parser (type-token :identifier)))
     (assert-parser-failure (parse-source parser "42" tokenizer)
         (value next failure)
-      (assert-equal 0 next)
-      (assert-equal :identifier (parse-failure-expected failure))
-      (assert-equal :number (token-type (parse-failure-actual failure))))))
+      (expect next :to-equal 0)
+      (expect (parse-failure-expected failure) :to-equal :identifier)
+      (expect (token-type (parse-failure-actual failure)) :to-equal :number))))
 
-(deftest-case parse-tokens-discards-success-path-diagnostics-test
+(it-sequential "parse-tokens-discards-success-path-diagnostics-test"
     (let* ((tokens (vector (make-token :type :identifier :text "foo" :start 0 :end 3)
                          (make-token :type :comma :text "," :start 3 :end 4)))
          (parser (seq (opt (lookahead (seq (type-token :identifier)
@@ -65,11 +65,11 @@
                       (type-token :comma))))
     (assert-parser-success (parse-tokens parser tokens)
         (value next failure)
-      (assert-equal 3 (length value))
-      (assert-equal 2 next)
-      (assert-false failure))))
+      (expect (length value) :to-equal 3)
+      (expect next :to-equal 2)
+      (expect failure :to-be-falsy))))
 
-(deftest-case parse-all-discards-success-path-diagnostics-test
+(it-sequential "parse-all-discards-success-path-diagnostics-test"
     (let* ((tokens (vector (make-token :type :identifier :text "foo" :start 0 :end 3)
                          (make-token :type :comma :text "," :start 3 :end 4)))
          (parser (seq (opt (lookahead (seq (type-token :identifier)
@@ -78,11 +78,11 @@
                       (type-token :comma))))
     (assert-parser-success (parse-all parser tokens)
         (value next failure)
-      (assert-equal 3 (length value))
-      (assert-equal 2 next)
-      (assert-false failure))))
+      (expect (length value) :to-equal 3)
+      (expect next :to-equal 2)
+      (expect failure :to-be-falsy))))
 
-(deftest-case parse-source-discards-success-path-diagnostics-test
+(it-sequential "parse-source-discards-success-path-diagnostics-test"
     (let* ((tokenizer (%make-parser-tokenizer *identifier-comma-rule-specs*))
          (parser (seq (opt (lookahead (seq (type-token :identifier)
                                            (end-of-input))))
@@ -90,6 +90,6 @@
                       (type-token :comma))))
     (assert-parser-success (parse-source parser "foo," tokenizer)
         (value next failure)
-      (assert-equal 3 (length value))
-      (assert-equal 2 next)
-      (assert-false failure))))
+      (expect (length value) :to-equal 3)
+      (expect next :to-equal 2)
+      (expect failure :to-be-falsy))))

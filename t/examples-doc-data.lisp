@@ -22,7 +22,7 @@ if?")
        "does not yet ship formal versioned releases"))
     ((string= document "SECURITY.md")
      '("scripts/run-compile-check.lisp"
-       "scripts/run-tests.lisp"
+       "nix flake check"
        "scripts/run-examples.lisp"
        "./scripts/run-implementation-smoke.sh"
        "SUPPORT.md"
@@ -32,7 +32,7 @@ if?")
      '("scripts/run-tests.lisp"
        "scripts/run-compile-check.lisp"
        "scripts/run-examples.lisp"
-       "--filter"
+       "nix flake check"
        "API.md"
        "EXAMPLES.md"
        "SUPPORT.md"
@@ -60,6 +60,7 @@ if?")
     ((string= document "MAINTAINERS.md")
      '("README.md"
        "API.md"
+       "nix flake check"
        "sbcl --script scripts/run-tests.lisp"
        "no guaranteed response-time SLA"))
     ((string= document "VERSIONING.md")
@@ -67,9 +68,10 @@ if?")
        "pin the exact commit"
        "semantic versioning"))
     ((string= document "RELEASING.md")
-     '("run `./scripts/run-release-audit.sh`"
+     '("run `nix flake check`"
+       "run `./scripts/run-release-audit.sh`"
        "run `sbcl --script scripts/run-compile-check.lisp`"
-       "run `sbcl --script scripts/run-tests.lisp`"
+       "nix develop --command sbcl --script scripts/run-tests.lisp"
        "run `sbcl --script scripts/run-examples.lisp`"
        "run `./scripts/run-implementation-smoke.sh`"
        "CONTRIBUTING.md"
@@ -80,9 +82,9 @@ if?")
        "ROADMAP.md"
        "repeatable CI path"))
     ((string= document "ROADMAP.md")
-     '("add repository-level CI"
-       "manual local execution"
-       "promote"
+     '("repository-level `nix flake check` CI"
+       "coverage"
+       "cut the first tagged release"
        "first tagged release"
        "portability-sensitive parser and"
        "release notes for tagged releases"
@@ -113,14 +115,5 @@ if?")
        "`parse-pratt`"
        "`parse-pratt-source`"
        "End-to-end entry points intentionally stay small"))
-    ((string= document "API.md/testing")
-     '("## Testing"
-       "`run-tests` accepts `:filter` and `:stream` keyword arguments."
-       "case-insensitive substring"
-       "exact test symbol"
-       "predicate that"
-       "receives each test name symbol"
-       "scripts/run-tests.lisp"
-       "--filter FILTER"))
     (t
      (error "Unknown document snippet contract: ~S" document))))

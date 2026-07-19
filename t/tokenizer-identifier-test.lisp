@@ -1,6 +1,6 @@
 (in-package :cl-parser-kit/test)
 
-(deftest-case tokenizer-identifier-rule-supports-custom-start-and-continue-predicates-test
+(it-sequential "tokenizer-identifier-rule-supports-custom-start-and-continue-predicates-test"
   (let* ((tokenizer (%make-custom-identifier-tokenizer))
          (tokens (tokenize-string "$value tail? plain" tokenizer)))
     (assert-tokenizer-tokens
@@ -9,17 +9,16 @@
            (%make-tokenizer-token-spec :type :identifier :value "tail?")
            (%make-tokenizer-token-spec :type :identifier :value "plain")))))
 
-(deftest-case tokenizer-rejects-non-advancing-rules-test
+(it-sequential "tokenizer-rejects-non-advancing-rules-test"
   (let* ((rule (make-token-rule
                 :type :stuck
                 :matcher (lambda (source index)
                            (declare (ignore source index))
                            (values t 0 "" nil))))
          (tokenizer (make-tokenizer :rules (list rule))))
-    (assert-signals error
-      (tokenize "x" tokenizer))))
+    (expect (lambda () (tokenize "x" tokenizer)) :to-throw (quote error))))
 
-(deftest-case tokenizer-public-accessor-contract-test
+(it-sequential "tokenizer-public-accessor-contract-test"
   (let* ((calls '())
          (rule (make-token-rule
                 :type :word
@@ -28,21 +27,20 @@
                            (push (list source index) calls)
                            (values t 2 "ab" "AB"))))
          (tokenizer (make-tokenizer :rules (list rule))))
-    (assert-true (typep rule 'token-rule))
-    (assert-equal :word (token-rule-type rule))
-    (assert-true (token-rule-skip-p rule))
-    (assert-equal (list rule) (tokenizer-rules tokenizer))
+    (expect (typep rule 'token-rule) :to-be-truthy)
+    (expect (token-rule-type rule) :to-equal :word)
+    (expect (token-rule-skip-p rule) :to-be-truthy)
+    (expect (tokenizer-rules tokenizer) :to-equal (list rule))
     (multiple-value-bind (matched consumed text value)
         (funcall (token-rule-matcher rule) "abc" 0)
-      (assert-true matched)
-      (assert-equal 2 consumed)
-      (assert-equal "ab" text)
-      (assert-equal "AB" value))
+      (expect matched :to-be-truthy)
+      (expect consumed :to-equal 2)
+      (expect text :to-equal "ab")
+      (expect value :to-equal "AB"))
     (multiple-value-bind (matched consumed text value)
         (funcall (token-rule-matcher rule) "abc" 1)
-      (assert-true matched)
-      (assert-equal 2 consumed)
-      (assert-equal "ab" text)
-      (assert-equal "AB" value))
-    (assert-equal '(("abc" 1) ("abc" 0))
-                  calls)))
+      (expect matched :to-be-truthy)
+      (expect consumed :to-equal 2)
+      (expect text :to-equal "ab")
+      (expect value :to-equal "AB"))
+    (expect calls :to-equal '(("abc" 1) ("abc" 0)))))

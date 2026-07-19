@@ -1,6 +1,6 @@
 (in-package :cl-parser-kit/test)
 
-(deftest-case public-doc-links-resolve-test
+(it-sequential "public-doc-links-resolve-test"
   (dolist (doc-name '("README.md"
                       "API.md"
                       "PARSING_PATTERNS.md"
@@ -20,18 +20,14 @@
       (dolist (target (markdown-local-links doc-name))
         (unless (probe-file (markdown-link-pathname doc-name target))
           (push target missing)))
-      (assert-equal '()
-                    (nreverse missing)
-                    (format nil "~A contains broken local links" doc-name)))))
+      (expect (nreverse missing) :to-equal '()))))
 
-(deftest-case examples-guide-covers-all-example-files-test
+(it-sequential "examples-guide-covers-all-example-files-test"
   (let* ((contents (doc-file-contents "EXAMPLES.md"))
          (missing (loop for name in (example-file-names)
                         unless (search name contents :test #'char-equal)
                         collect name)))
-    (assert-equal '()
-                  missing
-                  "EXAMPLES.md must mention every file in examples/")))
+    (expect missing :to-equal '())))
 
 (register-document-snippet-tests
   (readme-documents-verification-and-support-entry-points-test
@@ -68,11 +64,8 @@
    "API.md"
    (document-required-snippets "API.md/recommended-entry-points")))
 
-(deftest-case readme-quick-start-surface-matches-api-guide-test
-  (assert-equal
-   (markdown-bullet-code-items "API.md" "## Quick Start Surface")
-   (markdown-bullet-code-items "README.md" "### Quick Start Surface")
-   "README quick-start API bullets must mirror API.md"))
+(it-sequential "readme-quick-start-surface-matches-api-guide-test"
+  (expect (markdown-bullet-code-items "README.md" "### Quick Start Surface") :to-equal (markdown-bullet-code-items "API.md" "## Quick Start Surface")))
 
 (register-document-snippet-tests
   (parsing-patterns-guide-documents-recommended-upgrade-path-test
@@ -80,33 +73,25 @@
    (document-required-snippets "PARSING_PATTERNS.md"))
   (api-guide-documents-canonical-entry-points-test
    "API.md"
-   (document-required-snippets "API.md/canonical-entry-points"))
-  (api-guide-documents-test-entry-points-test
-   "API.md"
-   (document-required-snippets "API.md/testing")))
+   (document-required-snippets "API.md/canonical-entry-points")))
 
-(deftest-case api-guide-covers-all-exported-symbols-test
+(it-sequential "api-guide-covers-all-exported-symbols-test"
   (let* ((documented (markdown-code-identifiers "API.md"))
          (missing (sort (loop for symbol being the external-symbols of (find-package :cl-parser-kit)
                               for name = (string-downcase (symbol-name symbol))
                               unless (member name documented :test #'string=)
                               collect name)
                         #'string<)))
-    (assert-equal '()
-                  missing
-                  "API.md must mention every cl-parser-kit export in backticks")))
+    (expect missing :to-equal '())))
 
-(deftest-case asdf-systems-publish-oss-metadata-test
+(it-sequential "asdf-systems-publish-oss-metadata-test"
   (dolist (name '("cl-parser-kit.asd" "cl-parser-kit-test.asd"))
     (let ((contents (repository-file-contents name)))
-      (assert-true (string-contains-p ":homepage" contents)
-                   (format nil "~A must publish a homepage" name))
-      (assert-true (string-contains-p ":bug-tracker" contents)
-                   (format nil "~A must publish a bug tracker" name))
-      (assert-true (string-contains-p ":source-control" contents)
-                   (format nil "~A must publish source control metadata" name)))))
+      (expect (string-contains-p ":homepage" contents) :to-be-truthy)
+      (expect (string-contains-p ":bug-tracker" contents) :to-be-truthy)
+      (expect (string-contains-p ":source-control" contents) :to-be-truthy))))
 
-(deftest-case examples-guide-documents-raw-checkout-example-verification-test
+(it-sequential "examples-guide-documents-raw-checkout-example-verification-test"
   (assert-document-contains-all
    "EXAMPLES.md"
    '("scripts/run-examples.lisp"

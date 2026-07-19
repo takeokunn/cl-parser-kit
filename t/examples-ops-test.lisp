@@ -1,6 +1,6 @@
 (in-package :cl-parser-kit/test)
 
-(deftest-case smoke-script-covers-documented-implementation-keys-test
+(it-sequential "smoke-script-covers-documented-implementation-keys-test"
   (let ((contents (repository-file-contents "scripts/run-implementation-smoke.sh")))
     (assert-string-contains-all
      contents
@@ -14,14 +14,14 @@
        "PASS"
        "FAIL"))))
 
-(deftest-case repository-does-not-ship-debug-helper-scripts-test
+(it-sequential "repository-does-not-ship-debug-helper-scripts-test"
   (assert-repository-files-do-not-match
    "scripts/*.lisp"
    (lambda (name)
      (local-string-prefix-p "debug-" name))
    "temporary debug scripts should not ship in the repository: ~S"))
 
-(deftest-case smoke-script-invokes-checked-in-verification-entrypoints-directly-test
+(it-sequential "smoke-script-invokes-checked-in-verification-entrypoints-directly-test"
   (let ((script (repository-file-contents "scripts/run-implementation-smoke.sh")))
     (dolist (needle '("compile_check_script="
                       "run_tests_script="
@@ -35,15 +35,13 @@
                       "run_check \"$impl_name\" examples"
                       "impl_version"
                       "join_command"))
-      (assert-true (search needle script)
-                   "Smoke script should invoke checked-in verification entrypoints directly via ~S."
-                   needle))
+      (expect (search needle script) :to-be-truthy))
     (assert-string-lacks-any
      script
      '("driver_file=" "cat >\"$driver_file\"" "trap cleanup")
      "Smoke script should no longer depend on temporary driver artifact ~S.")))
 
-(deftest-case release-audit-script-enforces-release-gate-contract-test
+(it-sequential "release-audit-script-enforces-release-gate-contract-test"
   (let ((script (repository-file-contents "scripts/run-release-audit.sh")))
     (dolist (needle '("LICENSE"
                       "README.md"
@@ -72,13 +70,11 @@
                       "RELEASING includes the versioning policy in the gate"
                       "GOVERNANCE requires executable evidence for behavioral claims"
                       "MAINTAINERS preserves the raw-checkout verification baseline"
-                      "ROADMAP keeps CI as an explicit remaining gap"
+                      "ROADMAP records the reproducible CI verification path"
                       "run_with_timeout"
                       "run_step_with_timeout"
                       "timeout 300"
                       "README quick-start API bullets mirror API.md"
                       "sbcl --script"
                       "PASS release readiness audit"))
-      (assert-true (search needle script)
-                   "Release audit should cover release-gate contract detail ~S."
-                   needle))))
+      (expect (search needle script) :to-be-truthy))))

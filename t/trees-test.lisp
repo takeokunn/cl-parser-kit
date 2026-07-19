@@ -1,10 +1,11 @@
 (in-package :cl-parser-kit/test)
 
-(defun %tree-suite-test-name (suite suffix)
-  (intern (format nil "~A-~A"
-                  (string-upcase (symbol-name suite))
-                  suffix)
-          *package*))
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defun %tree-suite-test-name (suite suffix)
+    (intern (format nil "~A-~A"
+                    (string-upcase (symbol-name suite))
+                    suffix)
+            *package*)))
 
 (defmacro define-tree-node-suite (suite &key constructor type-accessor value-accessor
                                         children-accessor span-accessor data-accessor
@@ -27,16 +28,16 @@
                                    `(:type ,type :value ,value :children ()))
                                  child-types
                                  child-values))
-         (rich-children (mapcar (lambda (type value)
-                                  `(:type ,type
-                                    :value ,value
-                                    :children ()
-                                    :span ,span-plist-var
-                                    :data nil))
-                                child-types
-                                child-values)))
+         (rich-child-forms (mapcar (lambda (type value)
+                                     `(list :type ,type
+                                            :value ,value
+                                            :children '()
+                                            :span ,span-plist-var
+                                            :data nil))
+                                   child-types
+                                   child-values)))
     `(progn
-       (deftest-case ,(%tree-suite-test-name suite "NODE-TEST")
+       (it-sequential ,(symbol-name (%tree-suite-test-name suite "NODE-TEST"))
          (let* ((,span-var ,sample-span)
                 (,children-var (list ,@child-forms))
                 (,node-var (,constructor :type ,node-type
@@ -44,14 +45,13 @@
                                          :children ,children-var
                                          :span ,span-var
                                          :data ,root-data)))
-           (assert-equal ,node-type (,type-accessor ,node-var))
-           (assert-equal ,node-value (,value-accessor ,node-var))
-           (assert-equal ,span-var (,span-accessor ,node-var))
-           (assert-equal ,root-data (,data-accessor ,node-var))
-           (assert-equal ,(first child-types)
-                         (,type-accessor (first (,children-accessor ,node-var))))))
+           (expect (,type-accessor ,node-var) :to-equal ,node-type)
+           (expect (,value-accessor ,node-var) :to-equal ,node-value)
+           (expect (,span-accessor ,node-var) :to-equal ,span-var)
+           (expect (,data-accessor ,node-var) :to-equal ,root-data)
+           (expect (,type-accessor (first (,children-accessor ,node-var))) :to-equal ,(first child-types))))
 
-       (deftest-case ,(%tree-suite-test-name suite "PUBLIC-ACCESSOR-CONTRACT-TEST")
+       (it-sequential ,(symbol-name (%tree-suite-test-name suite "PUBLIC-ACCESSOR-CONTRACT-TEST"))
          (let* ((,span-var ,sample-span)
                 (,children-var (list ,@child-forms))
                 (,node-var (,constructor :type ,node-type
@@ -59,21 +59,21 @@
                                          :children ,children-var
                                          :span ,span-var
                                          :data ,root-data)))
-           (assert-true (typep ,node-var ',struct-type))
-           (assert-equal ,node-type (,type-accessor ,node-var))
-           (assert-equal ,node-value (,value-accessor ,node-var))
-           (assert-equal ,children-var (,children-accessor ,node-var))
-           (assert-equal ,span-var (,span-accessor ,node-var))
-           (assert-equal ,root-data (,data-accessor ,node-var))))
+           (expect (typep ,node-var ',struct-type) :to-be-truthy)
+           (expect (,type-accessor ,node-var) :to-equal ,node-type)
+           (expect (,value-accessor ,node-var) :to-equal ,node-value)
+           (expect (,children-accessor ,node-var) :to-equal ,children-var)
+           (expect (,span-accessor ,node-var) :to-equal ,span-var)
+           (expect (,data-accessor ,node-var) :to-equal ,root-data)))
 
-       (deftest-case ,(%tree-suite-test-name suite "SPAN-PRESERVATION-TEST")
+       (it-sequential ,(symbol-name (%tree-suite-test-name suite "SPAN-PRESERVATION-TEST"))
          (let ((,span-var ,sample-span))
            (let ((,node-var (,constructor :type ,node-type
                                           :value ,node-value
                                           :span ,span-var)))
-             (assert-equal ,span-var (,span-accessor ,node-var)))))
+             (expect (,span-accessor ,node-var) :to-equal ,span-var))))
 
-       (deftest-case ,(%tree-suite-test-name suite "SEXP-TEST")
+       (it-sequential ,(symbol-name (%tree-suite-test-name suite "SEXP-TEST"))
          (let* ((,span-var ,sample-span)
                 (,span-plist-var (list :source (span-source ,span-var)
                                        :start (span-start ,span-var)
@@ -88,18 +88,14 @@
                                          :children ,children-var
                                          :span ,span-var
                                          :data ,root-data)))
-            (assert-equal
-             (list :type ,node-type
+            (expect (,sexp-accessor ,node-var) :to-equal (list :type ,node-type
                    :value ,sexp-value
-                   :children ',plain-children)
-             (,sexp-accessor ,node-var))
-            (assert-equal
-             (list :type ,node-type
+                   :children ',plain-children))
+            (expect (,sexp-accessor ,node-var :include-span t :include-data t) :to-equal (list :type ,node-type
                    :value ,sexp-value
-                   :children ',rich-children
+                   :children (list ,@rich-child-forms)
                    :span ,span-plist-var
-                   :data ,root-data)
-             (,sexp-accessor ,node-var :include-span t :include-data t)))))))
+                   :data ,root-data)))))))
 
 (define-tree-node-suite ast
   :constructor make-ast-node

@@ -6,8 +6,8 @@
     (assert-example-successes
      ((parse-source group-parser "(answer, result);" tokenizer)
       (value next failure)
-      (assert-equal 6 next)
-      (assert-equal '("answer" "result") value))
+      (expect next :to-equal 6)
+      (expect value :to-equal '("answer" "result")))
      ((parse-tokens
        binding-parser
        (vector (make-token :type :identifier :text "answer")
@@ -15,8 +15,8 @@
                (make-token :type :number :text "42" :value 42)
                (make-token :type :semicolon :text ";")))
       (value next failure)
-      (assert-equal 4 next)
-      (assert-equal '("answer" :assign 42) value)))))
+      (expect next :to-equal 4)
+      (expect value :to-equal '("answer" :assign 42))))))
  (examples-guide-opt-trailing-separator-snippet-test
   (let* ((tokenizer (make-punctuated-example-tokenizer))
          (parser
@@ -28,12 +28,12 @@
     (assert-example-successes
      ((parse-source parser "(answer, result)" tokenizer)
       (value next failure)
-      (assert-equal 5 next)
-      (assert-equal '("answer" "result") value))
+      (expect next :to-equal 5)
+      (expect value :to-equal '("answer" "result")))
      ((parse-source parser "(answer, result,)" tokenizer)
       (value next failure)
-      (assert-equal 6 next)
-      (assert-equal '("answer" "result") value)))))
+      (expect next :to-equal 6)
+      (expect value :to-equal '("answer" "result"))))))
  (readme-parse-tokens-snippet-test
   (let* ((tokens (vector (make-token :type :identifier :text "answer")
                          (make-token :type :equals :text "=")
@@ -45,10 +45,10 @@
     (assert-example-success
      (parse-tokens parser tokens)
      (value next failure)
-     (assert-equal 3 next)
-     (assert-equal "answer" (token-text (first value)))
-     (assert-equal "=" (token-text (second value)))
-     (assert-equal 42 (token-value (third value))))))
+     (expect next :to-equal 3)
+     (expect (token-text (first value)) :to-equal "answer")
+     (expect (token-text (second value)) :to-equal "=")
+     (expect (token-value (third value)) :to-equal 42))))
  (readme-token-navigation-snippet-test
   (let* ((tokens (vector (make-token :type :identifier :text "answer")
                          (make-token :type :equals :text "=")
@@ -69,14 +69,14 @@
                     (third parts))))))
     (multiple-value-bind (first next)
         (next-token tokens 0)
-      (assert-equal "answer" (token-text (peek-token tokens 0)))
-      (assert-equal "answer" (token-text first))
-      (assert-equal 1 next)
-      (assert-false (eof-token-p tokens next))
+      (expect (token-text (peek-token tokens 0)) :to-equal "answer")
+      (expect (token-text first) :to-equal "answer")
+      (expect next :to-equal 1)
+      (expect (eof-token-p tokens next) :to-be-falsy)
       (assert-example-success
        (parse-tokens parser tokens)
        (value parse-next failure)
-       (assert-equal 3 parse-next)
-       (assert-equal '("answer" 42) value)
-       (assert-false failure))
-      (assert-true (eof-token-p tokens (length tokens)))))))
+       (expect parse-next :to-equal 3)
+       (expect value :to-equal '("answer" 42))
+       (expect failure :to-be-falsy))
+      (expect (eof-token-p tokens (length tokens)) :to-be-truthy)))))

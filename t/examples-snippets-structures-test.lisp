@@ -9,7 +9,7 @@
                                 :type :identifier
                                 :value "answer"
                                 :span span)))))
-    (assert-equal '(:type :binding
+    (expect (cst-node->sexp cst :include-span t) :to-equal '(:type :binding
                     :value nil
                     :children ((:type :identifier
                                 :value "answer"
@@ -18,8 +18,7 @@
                                        :start 0 :end 3
                                        :start-line 1 :start-column 1
                                        :end-line 1 :end-column 1)))
-                    :span nil)
-                  (cst-node->sexp cst :include-span t))))
+                    :span nil))))
  (readme-lookahead-not-followed-by-snippet-test
   (let* ((tokens (vector (make-token :type :identifier :text "foo")
                          (make-token :type :plus :text "+")))
@@ -33,11 +32,11 @@
     (assert-example-successes
      ((parse-tokens parser tokens)
       (value next failure)
-      (assert-equal 2 next)
-      (assert-equal 4 (length value))
-      (assert-equal 2 (length (first value)))
-      (assert-equal "foo" (token-text (second value)))
-      (assert-equal "+" (token-text (fourth value)))))))
+      (expect next :to-equal 2)
+      (expect (length value) :to-equal 4)
+      (expect (length (first value)) :to-equal 2)
+      (expect (token-text (second value)) :to-equal "foo")
+      (expect (token-text (fourth value)) :to-equal "+")))))
  (readme-operator-chain-snippet-test
   (let* ((tokenizer (make-operator-chain-tokenizer))
          (number-parser
@@ -61,11 +60,11 @@
     (assert-example-successes
      ((parse-source subtract-parser "10 - 3 - 2" tokenizer)
       (value next failure)
-      (assert-equal 5 next)
-      (assert-equal 5 value))
+      (expect next :to-equal 5)
+      (expect value :to-equal 5))
      ((parse-source power-parser "2 ^ 3 ^ 2" tokenizer)
       (value next failure)
-      (assert-equal 5 next)
-      (assert-equal 512 value))))))
+      (expect next :to-equal 5)
+      (expect value :to-equal 512))))))
 
 (assert-example-shape-failure-snippet)

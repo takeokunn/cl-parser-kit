@@ -45,11 +45,13 @@
 (defun %assert-trailing-token-diagnostic (failure source location-snippet caret-snippet)
   (let* ((diagnostic (first (parse-failure-diagnostics failure)))
          (rendered (diagnostic->string diagnostic)))
-    (assert-true diagnostic)
-    (assert-true (search "Unexpected trailing token" rendered))
-    (assert-true (search source rendered))
-    (assert-true (search location-snippet rendered))
-    (assert-true (search caret-snippet rendered))))
+    (expect diagnostic :to-be-truthy)
+    (expect (search "Unexpected trailing token" rendered) :to-be-truthy)
+    (when source
+      (expect (search source rendered) :to-be-truthy))
+    (expect (search location-snippet rendered) :to-be-truthy)
+    (when caret-snippet
+      (expect (search caret-snippet rendered) :to-be-truthy))))
 
 (defparameter *identifier-plus-number-rule-specs*
   '((:whitespace :skip-p t)
