@@ -69,6 +69,10 @@ identifier sigils or suffix markers such as `$value` or `tail?`, use
 
 ## Installation
 
+The library system (`cl-parser-kit`) has **no runtime dependencies** — only the
+test system (`cl-parser-kit-test`) pulls in `cl-weave` and `cl-prolog`. Loading
+it into an application never drags in the test tooling.
+
 With ASDF, place the repository in your `local-projects` directory or add the
 checkout to your ASDF source registry.
 
@@ -76,11 +80,29 @@ checkout to your ASDF source registry.
 (asdf:load-system :cl-parser-kit)
 ```
 
+With Quicklisp, a checkout under `~/quicklisp/local-projects/` (or
+`~/common-lisp/`) is discovered automatically:
+
+```lisp
+(ql:quickload "cl-parser-kit")
+```
+
+If you use [Ultralisp](https://ultralisp.org/), you can add this repository as a
+source and pull the library the same way once it is indexed.
+
 To load the repository test system explicitly:
 
 ```lisp
 (asdf:load-system :cl-parser-kit-test)
 ```
+
+The test system depends on `cl-weave` and `cl-prolog`, which are not distributed
+through Quicklisp/Ultralisp; the Nix dev shell (`nix develop`) and `nix flake
+check` resolve the pinned versions automatically. Outside Nix, make matching
+checkouts of [`cl-weave`](https://github.com/takeokunn/cl-weave) and
+[`cl-prolog`](https://github.com/takeokunn/cl-prolog) discoverable by ASDF (see
+`scripts/bootstrap.lisp` for the exact roots it expects). Running the library
+itself never requires these.
 
 If you keep personal projects in `~/common-lisp/`, one typical setup is:
 
@@ -725,7 +747,6 @@ For exact exports, see [`src/package.lisp`](./src/package.lisp).
 - `ARCHITECTURE.md` - layer model and dependency direction
 - `API.md` - grouped public surface and common entry points
 - `EXAMPLES.md` - example map and walkthrough order
-- `todo.md` - implementation brief and acceptance checklist
 
 ## Examples
 
@@ -794,8 +815,19 @@ When adding new public behavior:
 
 ## Security
 
-If you discover a security issue, report it privately to the repository
-maintainer instead of opening a public issue.
+The tokenizer and parser are designed to process untrusted source text. Several
+exported specials bound the work any single call can perform, so hostile input
+fails gracefully instead of exhausting memory or the control stack:
+`*maximum-tokenizer-source-length*`, `*maximum-tokenizer-tokens*`,
+`*maximum-number-lexeme-length*`, `*maximum-parser-recursion-depth*`,
+`*maximum-pratt-recursion-depth*`, and `*maximum-diagnostic-line-length*`.
+Rebind or `setf` them for intentionally large legitimate inputs; the tokenizer
+limits signal `tokenizer-resource-limit-exceeded`. See [`API.md`](./API.md) for
+details.
+
+If you discover a security issue, report it privately — see
+[`SECURITY.md`](./SECURITY.md) for the reporting channel — instead of opening a
+public issue.
 
 ## License
 
