@@ -39,6 +39,18 @@
      (tokenize (format nil "~C~C" #\" #\") tokenizer)
      (list (%make-tokenizer-token-spec :type :string :value "")))))
 
+(it-sequential "tokenizer-string-rule-declines-large-unterminated-candidate-test"
+  (let* ((*maximum-tokenizer-source-length* 10000)
+         (*maximum-tokenizer-tokens* 10)
+         (tokenizer (%make-string-tokenizer :escape-char #\\))
+         (source (concatenate 'string (string #\") (make-string 5000 :initial-element #\Space)))
+         (tokens (tokenize source tokenizer)))
+    (assert-tokenizer-tokens
+     tokens
+     (list (%make-tokenizer-token-spec :type :unknown
+                                       :text (string #\")
+                                       :value #\")))))
+
 (it-sequential "tokenizer-predicate-rule-options-test"
   (let* ((tokenizer (%make-predicate-word-tokenizer))
          (tokens (tokenize "AB Z CDE" tokenizer)))

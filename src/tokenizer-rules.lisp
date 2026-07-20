@@ -1,5 +1,12 @@
 (in-package :cl-parser-kit)
 
+(defun %ensure-non-empty-string (value argument-name)
+  (unless (stringp value)
+    (error "~A must be a string." argument-name))
+  (when (zerop (length value))
+    (error "~A must be a non-empty string." argument-name))
+  value)
+
 (defun %match-literal-token (source index literal &optional (test #'string=))
   (let* ((literal-length (length literal))
          (end (+ index literal-length)))
@@ -32,6 +39,7 @@
                                   (%string-range source index end))))))
 
 (defun make-literal-rule (type literal &key skip-p)
+  (%ensure-non-empty-string literal "literal")
   (make-token-rule
    :type type
    :skip-p skip-p
@@ -50,6 +58,7 @@ With CASE-SENSITIVE NIL the keyword matches regardless of case (`SELECT`, `selec
 and `Select` all match `select`); the token TEXT and VALUE are the canonical
 LITERAL either way. IDENTIFIER-CHAR-PREDICATE decides what counts as a flanking
 identifier character."
+  (%ensure-non-empty-string literal "literal")
   (let ((test (if case-sensitive #'string= #'string-equal)))
     (make-token-rule
      :type type
@@ -111,6 +120,7 @@ not need MAKE-LITERAL-RULE's multi-character matching."
                         (values t 1 text (funcall value-function text)))))))))
 
 (defun make-predicate-rule (type predicate &key (min-length 1) skip-p (value-function #'identity))
+  (check-type min-length (integer 1))
   (make-token-rule
    :type type
    :skip-p skip-p

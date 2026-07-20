@@ -51,6 +51,21 @@
     (expect (length kept) :to-equal 1)
     (expect (token-type (aref kept 0)) :to-equal :b)))
 
+(it-sequential "filter-tokens-stops-list-coercion-at-token-count-limit-test"
+  (let ((*maximum-parser-tokens* 1)
+        (tokens (list (make-token :type :a) (make-token :type :b))))
+    (expect (lambda ()
+              (filter-tokens tokens #'identity))
+            :to-throw 'error)))
+
+(it-sequential "filter-tokens-stops-circular-list-coercion-at-token-count-limit-test"
+  (let ((*maximum-parser-tokens* 1)
+        (tokens (list (make-token :type :a))))
+    (setf (cdr tokens) tokens)
+    (expect (lambda ()
+              (filter-tokens tokens #'identity))
+            :to-throw 'error)))
+
 (it-sequential "make-token-normalizes-negative-offsets-without-inverting-span-test"
   ;; A malformed external token (see TOKEN-METADATA's :SOURCE convention for
   ;; foreign token pipelines) may carry a negative START whose paired END is

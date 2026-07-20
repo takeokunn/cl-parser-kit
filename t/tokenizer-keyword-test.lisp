@@ -27,3 +27,7 @@
      (list (%make-tokenizer-token-spec :type :if :value "if")
            (%make-tokenizer-token-spec :type :identifier :value "if?")
            (%make-tokenizer-token-spec :type :identifier :value "maybe?")))))
+
+(it-sequential "tokenizer-keyword-rule-rejects-empty-keyword-test"
+  (expect (lambda () (make-keyword-rule :empty ""))
+          :to-throw 'error))

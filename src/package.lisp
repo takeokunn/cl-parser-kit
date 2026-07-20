@@ -55,6 +55,8 @@
    #:*maximum-number-exponent*
    #:*maximum-tokenizer-source-length*
    #:*maximum-tokenizer-tokens*
+   #:*maximum-tokenizer-rules*
+   #:*maximum-tokenizer-rule-alternatives*
    #:*maximum-number-lexeme-length*
    #:tokenizer-resource-limit-exceeded
    #:tokenizer-resource-limit-exceeded-kind

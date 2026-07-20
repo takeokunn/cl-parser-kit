@@ -67,6 +67,19 @@
   (let ((tokens (%tokenize-with (list (make-operator-rule :op '("==" "=" "<=" "<"))) "===")))
     (expect (map 'list #'token-text tokens) :to-equal '("==" "="))))
 
+(it-sequential "tokenizer-operator-rule-rejects-empty-operator-test"
+  (expect (lambda () (make-operator-rule :op '("+" "")))
+          :to-throw 'error))
+
+(it-sequential "tokenizer-operator-rule-rejects-excessive-operator-set-test"
+  (let ((*maximum-tokenizer-rule-alternatives* 1))
+    (expect (lambda () (make-operator-rule :op '("+" "-")))
+            :to-throw 'tokenizer-resource-limit-exceeded)))
+
+(it-sequential "tokenizer-operator-rule-rejects-improper-operator-set-test"
+  (expect (lambda () (make-operator-rule :op (cons "+" :tail)))
+          :to-throw 'error))
+
 ;;; MAKE-NESTED-BLOCK-COMMENT-RULE --------------------------------------------
 
 (it-sequential "tokenizer-nested-block-comment-spans-nested-delimiters-test"
@@ -115,3 +128,19 @@
          (tokens (%tokenize-with (list (make-string-rule :type :str :escape-char #\\))
                                  source)))
     (expect (token-value (elt tokens 0)) :to-equal "anb")))
+
+;;; COMMENT RULE CONSTRUCTOR VALIDATION ---------------------------------------
+
+(it-sequential "tokenizer-comment-rule-constructors-reject-zero-width-delimiters-test"
+  (expect (lambda () (make-line-comment-rule :prefix ""))
+          :to-throw 'error)
+  (expect (lambda () (make-block-comment-rule :start ""))
+          :to-throw 'error)
+  (expect (lambda () (make-block-comment-rule :end ""))
+          :to-throw 'error)
+  (expect (lambda () (make-nested-block-comment-rule :start ""))
+          :to-throw 'error)
+  (expect (lambda () (make-nested-block-comment-rule :end ""))
+          :to-throw 'error)
+  (expect (lambda () (make-nested-block-comment-rule :start "/*" :end "/*"))
+          :to-throw 'error))

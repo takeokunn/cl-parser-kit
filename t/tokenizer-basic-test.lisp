@@ -51,6 +51,19 @@
                       (make-tokenizer :rules (%basic-tokenizer-rules)))
             :to-satisfy (lambda (tokens) (= (length tokens) 5)))))
 
+(it-sequential "tokenizer-rule-count-limit-rejects-excessive-rules-test"
+  (let ((*maximum-tokenizer-rules* 1))
+    (expect (lambda ()
+              (tokenize "a" (make-tokenizer :rules (list (make-identifier-rule)
+                                                         (make-number-rule)))))
+            :to-throw 'tokenizer-resource-limit-exceeded)))
+
+(it-sequential "tokenizer-rejects-improper-rule-list-test"
+  (let ((rules (cons (make-identifier-rule) :tail)))
+    (expect (lambda ()
+              (tokenize "a" (make-tokenizer :rules rules)))
+            :to-throw 'error)))
+
 (it-sequential "number-rule-lexeme-length-limit-splits-hostile-digit-run-test"
   (let* ((*maximum-number-lexeme-length* 5)
          (tokenizer (make-tokenizer :rules (list (make-number-rule))))
@@ -58,3 +71,14 @@
     (expect (length tokens) :to-equal 3)
     (expect (map 'list #'token-text tokens)
             :to-equal '("99999" "99999" "99"))))
+
+(it-sequential "tokenizer-rule-constructors-reject-zero-width-basic-rules-test"
+  (expect (lambda () (make-literal-rule :empty ""))
+          :to-throw 'error)
+  (expect (lambda ()
+            (make-predicate-rule :predicate
+                                 (lambda (char)
+                                   (declare (ignore char))
+                                   t)
+                                 :min-length 0))
+          :to-throw 'error))

@@ -13,6 +13,15 @@ source that is short but expands into an unbounded number of token structs
 (each carrying its own span). Rebind or SETF to raise it for intentionally
 token-dense inputs.")
 
+(defparameter *maximum-tokenizer-rules* 100000
+  "Maximum number of token rules TOKENIZE accepts on a tokenizer before
+signaling TOKENIZER-RESOURCE-LIMIT-EXCEEDED. Guards against circular or
+adversarially huge rule lists at the public tokenizer boundary.")
+
+(defparameter *maximum-tokenizer-rule-alternatives* 100000
+  "Maximum number of literal alternatives accepted by rule constructors such as
+MAKE-OPERATOR-RULE before signaling TOKENIZER-RESOURCE-LIMIT-EXCEEDED.")
+
 (define-condition tokenizer-resource-limit-exceeded (error)
   ((kind :initarg :kind :reader tokenizer-resource-limit-exceeded-kind)
    (value :initarg :value :reader tokenizer-resource-limit-exceeded-value)
@@ -22,8 +31,8 @@ token-dense inputs.")
                      (tokenizer-resource-limit-exceeded-kind condition)
                      (tokenizer-resource-limit-exceeded-value condition)
                      (tokenizer-resource-limit-exceeded-limit condition))))
-  (:documentation "Signaled by TOKENIZE when SOURCE or its token count exceeds
-*MAXIMUM-TOKENIZER-SOURCE-LENGTH* / *MAXIMUM-TOKENIZER-TOKENS*. Catchable so
+  (:documentation "Signaled by TOKENIZE and tokenizer rule constructors when a
+public tokenizer boundary exceeds its configured resource limits. Catchable so
 embedders can turn a hostile input into a diagnostic instead of an unbounded
 allocation."))
 
@@ -40,6 +49,26 @@ allocation."))
 
 (defun token-rule-match (rule source index)
   (funcall (token-rule-matcher rule) source index))
+
+(defun %ensure-tokenizer-rule-vector (rules)
+  (multiple-value-bind (stream rule-count too-many-p)
+      (ensure-vector-up-to rules *maximum-tokenizer-rules*)
+    (when too-many-p
+      (error 'tokenizer-resource-limit-exceeded
+             :kind :rule-count
+             :value rule-count
+             :limit *maximum-tokenizer-rules*))
+    stream))
+
+(defun %ensure-tokenizer-rule-alternatives-vector (alternatives kind)
+  (multiple-value-bind (stream alternative-count too-many-p)
+      (ensure-vector-up-to alternatives *maximum-tokenizer-rule-alternatives*)
+    (when too-many-p
+      (error 'tokenizer-resource-limit-exceeded
+             :kind kind
+             :value alternative-count
+             :limit *maximum-tokenizer-rule-alternatives*))
+    stream))
 
 (defun %tokenize-emit (tokens source type text value start end
                        start-line start-column end-line end-column)
@@ -84,11 +113,12 @@ consing a fresh step object per token."
 (defun %tokenize-first-match (rules source index line column tokens)
   "Returns (values matched-p end end-line end-column tokens) for the first
 matching rule, or (values nil ...) when none match."
-  (dolist (rule rules (values nil index line column tokens))
-    (multiple-value-bind (ok end end-line end-column next-tokens)
-        (%tokenize-rule-match rule source index line column tokens)
-      (when ok
-        (return (values t end end-line end-column next-tokens))))))
+  (loop for rule across rules
+        do (multiple-value-bind (ok end end-line end-column next-tokens)
+               (%tokenize-rule-match rule source index line column tokens)
+             (when ok
+               (return (values t end end-line end-column next-tokens))))
+        finally (return (values nil index line column tokens))))
 
 (defun %tokenize-unknown (tokenizer source index line column tokens)
   "Emit a single unknown-token step. Returns (values end end-line end-column tokens)."
@@ -111,7 +141,7 @@ matching rule, or (values nil ...) when none match."
     (when (> length *maximum-tokenizer-source-length*)
       (error 'tokenizer-resource-limit-exceeded
              :kind :source-length :value length :limit *maximum-tokenizer-source-length*))
-    (let ((rules (tokenizer-rules tokenizer))
+    (let ((rules (%ensure-tokenizer-rule-vector (tokenizer-rules tokenizer)))
           (tokens '())
           (token-count 0)
           (index 0)

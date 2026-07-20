@@ -174,17 +174,28 @@ OPERATORS is a list of strings; the rule sorts them by descending length once, s
 separate literal rule per operator:
   (make-operator-rule :op '(\"==\" \"=\" \"<=\" \"<\" \">=\" \">\" \"->\" \"-\")).
 Every token produced carries TYPE; distinguish operators by their TEXT."
-  (let ((sorted (sort (copy-list operators) #'> :key #'length)))
-    (make-token-rule
-     :type type
-     :skip-p skip-p
-     :matcher (lambda (source index)
-                (let ((source-length (length source)))
-                  (dolist (operator sorted nil)
-                    (let* ((operator-length (length operator))
-                           (end (+ index operator-length)))
-                      (when (and (<= end source-length)
-                                 (string= operator source :start2 index :end2 end))
-                        (return (if skip-p
-                                    (values t operator-length nil nil)
-                                    (values t operator-length operator operator)))))))))))
+  (let ((operator-vector (%ensure-tokenizer-rule-alternatives-vector
+                          operators :operator-count)))
+    (loop for operator across operator-vector
+          do (%ensure-non-empty-string operator "operator"))
+    (let ((buckets (make-hash-table :test 'eql)))
+      (loop for operator across operator-vector
+            do (push operator (gethash (char operator 0) buckets)))
+      (maphash (lambda (char operators)
+                 (setf (gethash char buckets)
+                       (sort operators #'> :key #'length)))
+               buckets)
+      (make-token-rule
+       :type type
+       :skip-p skip-p
+       :matcher (lambda (source index)
+                  (let ((source-length (length source)))
+                    (when (< index source-length)
+                      (dolist (operator (gethash (char source index) buckets) nil)
+                        (let* ((operator-length (length operator))
+                               (end (+ index operator-length)))
+                          (when (and (<= end source-length)
+                                     (string= operator source :start2 index :end2 end))
+                            (return (if skip-p
+                                        (values t operator-length nil nil)
+                                        (values t operator-length operator operator)))))))))))))

@@ -64,7 +64,12 @@ Useful for pruning a token stream before parsing -- e.g. dropping non-skipped
 comment or whitespace tokens the tokenizer emitted:
   (filter-tokens toks (lambda (token) (not (eql (token-type token) :comment)))).
 TOKENS may be any sequence; the result is always a vector, matching TOKENIZE."
-  (let ((stream (ensure-vector tokens)))
+  (multiple-value-bind (stream token-count too-many-p)
+      (ensure-vector-up-to tokens *maximum-parser-tokens*)
+    (when too-many-p
+      (error "Token stream length ~D exceeds maximum ~D"
+             token-count
+             *maximum-parser-tokens*))
     (coerce (loop for token across stream
                   when (funcall predicate token)
                   collect token)
