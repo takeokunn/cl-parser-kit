@@ -177,6 +177,50 @@
                (ensure (equal '(:add 1 (:fact 2)) value)
                        "unexpected expression parse result"))))
 
+    (check "operator-precedence-example.lisp / parse-arithmetic-expression-example"
+           (lambda ()
+             (multiple-value-bind (ok value next failure)
+                 (call-example "operator-precedence-example.lisp"
+                               "PARSE-ARITHMETIC-EXPRESSION-EXAMPLE")
+               (declare (ignore failure))
+               (ensure ok "expected successful parse")
+               (ensure (= 5 next) "expected cursor 5, got ~A" next)
+               (ensure (eql 7 value) "unexpected arithmetic result ~A" value))))
+
+    (check "json-parser-example.lisp / parse-json-example"
+           (lambda ()
+             (multiple-value-bind (ok value next failure)
+                 (call-example "json-parser-example.lisp" "PARSE-JSON-EXAMPLE")
+               (declare (ignore failure))
+               (ensure ok "expected successful parse")
+               (ensure (= 17 next) "expected cursor 17, got ~A" next)
+               (ensure (equal '(("ok" . t) ("vals" 1.0d0 2.5d0) ("tag" . :null)) value)
+                       "unexpected JSON decode ~A" value))))
+
+    (check "error-recovery-example.lisp / parse-error-recovery-example"
+           (lambda ()
+             (multiple-value-bind (ok value next failure)
+                 (call-example "error-recovery-example.lisp"
+                               "PARSE-ERROR-RECOVERY-EXAMPLE")
+               (declare (ignore failure))
+               (ensure ok "expected successful (recovered) parse")
+               (ensure (= 11 next) "expected cursor 11, got ~A" next)
+               (ensure (equal '((:stmt "a" 1) :error (:stmt "c" 3)) (getf value :results))
+                       "unexpected recovery results ~A" (getf value :results))
+               (ensure (= 1 (getf value :error-count)) "expected 1 recovered error")
+               (ensure (= 1 (getf value :diagnostic-count))
+                       "expected 1 collected diagnostic"))))
+
+    (check "csv-parser-example.lisp / parse-csv-example"
+           (lambda ()
+             (multiple-value-bind (ok value next failure)
+                 (call-example "csv-parser-example.lisp" "PARSE-CSV-EXAMPLE")
+               (declare (ignore failure))
+               (ensure ok "expected successful parse")
+               (ensure (= 12 next) "expected cursor 12, got ~A" next)
+               (ensure (equal '(("a" "b" "c") ("d" "e,f" "g")) value)
+                       "unexpected CSV decode ~A" value))))
+
     (check "diagnostic-example.lisp / parse-expression-source"
            (lambda ()
              (multiple-value-bind (ok value next failure)
@@ -230,7 +274,7 @@
                               (getf (second (getf value :children)) :value))
                        "expected CST identifier value answer"))))
 
-    (format t "~&~D example checks, ~D failures~%" 16 failures)
+    (format t "~&~D example checks, ~D failures~%" 21 failures)
     (when (> failures 0)
       #+sbcl (sb-ext:exit :code 1)
       #-sbcl (error "Example checks failed"))))

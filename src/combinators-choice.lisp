@@ -1,0 +1,58 @@
+(in-package :cl-parser-kit)
+
+;;;; Choice and value-shaping combinators.
+;;;;
+;;;; These are thin, commit-preserving wrappers over the primitives in
+;;;; COMBINATORS.LISP / COMBINATORS-SEQUENCE.LISP. They intentionally avoid
+;;;; hand-rolled CPS so they inherit the already-verified committed-p semantics
+;;;; (recoverable failure -> backtrack; committed failure -> propagate).
+
+(defun choice (parsers)
+  "Ordered choice over a LIST of parsers -- the list form of ALT.
+
+Tries each parser in PARSERS in order at the same position, returning the first
+success. On total failure the farthest (best) failure is reported, exactly as
+ALT does. (CHOICE (LIST A B C)) is equivalent to (ALT A B C); prefer CHOICE
+when the alternatives are computed at runtime."
+  (apply #'alt parsers))
+
+(defun sequence-of (parsers)
+  "Run PARSERS (a LIST) in sequence, returning the list of their values.
+
+The list form of SEQ, exactly as CHOICE is the list form of ALT: prefer it when
+the sequence of sub-parsers is computed at runtime. (SEQUENCE-OF (LIST A B C)) is
+equivalent to (SEQ A B C), inheriting SEQ's commitment semantics."
+  (apply #'seq parsers))
+
+(define-parser-function option (default parser) :option
+  ;; Reuse OPT's exact recoverable machinery, only substituting DEFAULT for
+  ;; NIL as the fallback value. A recoverable (non-committed, progressing-safe)
+  ;; failure yields DEFAULT and consumes nothing; a committed failure still
+  ;; propagates, so OPTION never silently swallows a half-consumed construct.
+  (%run-parser-or-recoverable parser input position default))
+
+(define-parser-function fail-parser (message &key (expected :failure)) :fail
+  "A parser that always fails at the current position with MESSAGE.
+
+Useful for turning a semantic guard into a parse error, e.g. inside an ALT
+branch reached only when the input is structurally valid but disallowed. The
+failure is non-committed, so an enclosing OPT/ALT may still recover from it."
+  (declare (ignore input))
+  (%failure position expected nil (list (error-diagnostic message))))
+
+(defun as-value (value parser)
+  "Run PARSER, discard its result, and yield the constant VALUE on success.
+
+PARSER's input consumption and commit behaviour are preserved unchanged; only
+the produced value is replaced. The applicative \"$>\" / \"replace\" operator."
+  (map-parser parser
+              (lambda (_result)
+                (declare (ignore _result))
+                value)))
+
+(defun pure (value)
+  "Alias for RETURN-PARSER: a parser that consumes no input and yields VALUE.
+
+Named after the Applicative PURE so monadic/applicative code reads naturally
+alongside SEQ-MAP and PARSE-LET*."
+  (return-parser value))

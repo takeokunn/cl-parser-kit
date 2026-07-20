@@ -72,6 +72,36 @@
    (value next failure)
    (expect next :to-equal 4)
    (expect value :to-equal '(:add 1 (:fact 2))))
+  (operator-precedence-example-file-test
+   "operator-precedence-example.lisp"
+   "PARSE-ARITHMETIC-EXPRESSION-EXAMPLE"
+   ()
+   (value next failure)
+   (expect next :to-equal 5)
+   (expect value :to-equal 7))
+  (json-parser-example-file-test
+   "json-parser-example.lisp"
+   "PARSE-JSON-EXAMPLE"
+   ()
+   (value next failure)
+   (expect next :to-equal 17)
+   (expect value :to-equal '(("ok" . t) ("vals" 1.0d0 2.5d0) ("tag" . :null))))
+  (error-recovery-example-file-test
+   "error-recovery-example.lisp"
+   "PARSE-ERROR-RECOVERY-EXAMPLE"
+   ()
+   (value next failure)
+   (expect next :to-equal 11)
+   (expect (getf value :results) :to-equal '((:stmt "a" 1) :error (:stmt "c" 3)))
+   (expect (getf value :error-count) :to-equal 1)
+   (expect (getf value :diagnostic-count) :to-equal 1))
+  (csv-parser-example-file-test
+   "csv-parser-example.lisp"
+   "PARSE-CSV-EXAMPLE"
+   ()
+   (value next failure)
+   (expect next :to-equal 12)
+   (expect value :to-equal '(("a" "b" "c") ("d" "e,f" "g"))))
   (mini-language-example-file-test
    "mini-language-parser.lisp"
    "PARSE-LET-STATEMENT-EXAMPLE"

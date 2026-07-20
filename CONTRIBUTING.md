@@ -5,7 +5,7 @@ shape.
 
 ## Before You Change Code
 
-- read `todo.md`
+- read [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the layer model and dependency direction
 - check the existing tests and examples
 - keep exported symbols intentional
 - prefer the smallest change that solves the problem

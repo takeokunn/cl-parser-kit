@@ -1,5 +1,6 @@
 (asdf:defsystem "cl-parser-kit"
   :description "Small parser toolkit for Common Lisp text languages."
+  :version "0.1.0"
   :author "takeokunn"
   :license "MIT"
   :homepage "https://github.com/takeokunn/cl-parser-kit"
@@ -14,6 +15,7 @@
                  (:file "tokenizer")
                  (:file "tokenizer-rules")
                  (:file "tokenizer-rules-text")
+                 (:file "tokenizer-rules-extra")
                  (:file "diagnostics")
                  (:file "diagnostics-format")
                  (:file "tree")
@@ -22,8 +24,19 @@
                  (:file "combinators")
                  (:file "combinators-sequence")
                  (:file "combinators-boundary")
+                 (:file "combinators-choice")
+                 (:file "combinators-repeat")
+                 (:file "combinators-apply")
+                 (:file "combinators-macros")
+                 (:file "combinators-token")
+                 (:file "combinators-recover")
+                 (:file "combinators-backtrack")
+                 (:file "combinators-permutation")
+                 (:file "combinators-expression")
+                 (:file "combinators-memoize")
                  (:file "pratt")
                  (:file "pratt-parse")
+                 (:file "pratt-builders")
                  (:file "parser")
                  (:file "ast")
                  (:file "cst")))

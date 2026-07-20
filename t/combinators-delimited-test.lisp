@@ -75,7 +75,11 @@
         (expect next :to-equal 1)
         (expect (parse-failure-position failure) :to-equal 1)
         (expect (parse-failure-expected failure) :to-equal :identifier)
-        (expect (parse-failure-actual failure) :to-equal :eof)))))
+        (expect (parse-failure-actual failure) :to-equal :eof)
+        ;; PRECEDED-BY's prefix already consumed "let", so the failure must
+        ;; stay committed -- otherwise a surrounding OPT/MANY/ALT silently
+        ;; backtracks past a half-consumed construct (PARSING_PATTERNS.md).
+        (expect (parse-failure-committed-p failure) :to-be-truthy)))))
 
 (it-sequential "combinator-terminated-by-test"
   (with-combinator-tokens
@@ -113,7 +117,43 @@
         (expect next :to-equal 1)
         (expect (parse-failure-position failure) :to-equal 1)
         (expect (parse-failure-expected failure) :to-equal :semicolon)
-        (expect (parse-failure-actual failure) :to-equal :eof)))))
+        (expect (parse-failure-actual failure) :to-equal :eof)
+        ;; TERMINATED-BY's body already consumed "answer", so the failure
+        ;; must stay committed once the suffix fails (PARSING_PATTERNS.md).
+        (expect (parse-failure-committed-p failure) :to-be-truthy)))))
+
+(it-sequential "combinator-terminated-by-committed-failure-is-not-swallowed-by-many-test"
+  ;; Regression for a bug where BIND-PARSER (which TERMINATED-BY is built on)
+  ;; ignored that its first sub-parser had consumed input, so a surrounding
+  ;; MANY treated a genuine "identifier not followed by ';'" grammar error as
+  ;; an ordinary non-consuming stop-here failure and silently returned an
+  ;; empty list instead of propagating the hard failure.
+  (with-combinator-tokens
+      (tokens '((:type :identifier :text "a")
+                (:type :identifier :text "a")))
+    (let ((parser (many (terminated-by (type-token :identifier)
+                                       (type-token :semicolon)))))
+      (assert-combinator-failure (parse-tokens parser tokens) (value next failure)
+        (expect value :to-be-falsy)
+        (expect next :to-equal 1)
+        (expect (parse-failure-committed-p failure) :to-be-truthy)))))
+
+(it-sequential "combinator-between-propagates-committed-close-delimiter-failure-test"
+  (with-combinator-tokens
+      (tokens '((:type :lparen :text "(")
+                (:type :identifier :text "foo")
+                (:type :identifier :text "bar")))
+    (let ((parser (between (type-token :lparen)
+                           (type-token :identifier)
+                           (type-token :rparen))))
+      (assert-combinator-failure (parse-tokens parser tokens) (value next failure)
+        (expect value :to-be-falsy)
+        (expect next :to-equal 2)
+        (expect (parse-failure-expected failure) :to-equal :rparen)
+        ;; BETWEEN already consumed "(" and "foo", so a wrong close token
+        ;; must stay a hard failure instead of letting e.g. ALT or OPT
+        ;; recover past the unmatched "(".
+        (expect (parse-failure-committed-p failure) :to-be-truthy)))))
 
 (it-sequential "combinator-delimited-sep-by1-test"
   (with-combinator-tokens (tokens *paren-identifier-comma-identifier-token-specs*)

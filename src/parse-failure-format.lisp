@@ -3,6 +3,17 @@
 (defun %token-like-p (value)
   (typep value 'token))
 
+(defun parse-failure-span (failure)
+  "The source span of FAILURE's actual token, or NIL when the failure carries no
+token (for example at end of input, where the actual is :EOF).
+
+A convenience for rendering a caret or slicing the offending source region from a
+failure without building a full diagnostic: pair it with SPAN-TEXT or the
+SPAN-START-LINE / SPAN-START-COLUMN accessors."
+  (let ((actual (parse-failure-actual failure)))
+    (when (%token-like-p actual)
+      (%token-effective-span actual :position (parse-failure-position failure)))))
+
 (defun %parse-failure-token-string (token)
   (or (and (token-type token)
            (string-upcase (symbol-name (token-type token))))
@@ -75,9 +86,25 @@
              (terpri out))
            (%write-diagnostic diagnostic out)))
 
+(defun parse-failure->diagnostics (failure)
+  "Return the list of structured DIAGNOSTIC objects describing FAILURE: its
+attached diagnostics when it carries any, otherwise a single synthesized default
+diagnostic (an \"Expected X, got Y\" error carrying the failure's span).
+
+The structured counterpart of PARSE-FAILURE->STRING -- use it when rendering or
+aggregating failures with your own tooling (fix-its, an LSP, a batched report)
+rather than the built-in string form. Always returns at least one diagnostic."
+  (or (%parse-failure-diagnostics-list failure)
+      (list (%parse-failure-default-diagnostic failure))))
+
 (defun parse-failure->string (failure)
-  (let ((diagnostics (%parse-failure-diagnostics-list failure)))
-    (if diagnostics
-        (with-output-to-string (out)
-          (%write-diagnostics diagnostics out))
-        (diagnostic->string (%parse-failure-default-diagnostic failure)))))
+  (with-output-to-string (out)
+    (%write-diagnostics (parse-failure->diagnostics failure) out)))
+
+(defun diagnostics->string (diagnostics)
+  "Render a LIST of diagnostics as one string, each rendered by DIAGNOSTIC->STRING
+and separated by a blank line; NIL entries are ignored. The multi-diagnostic form
+of DIAGNOSTIC->STRING, handy for a recovery parse's collected diagnostics or the
+result of PARSE-FAILURE->DIAGNOSTICS."
+  (with-output-to-string (out)
+    (%write-diagnostics (remove nil diagnostics) out)))

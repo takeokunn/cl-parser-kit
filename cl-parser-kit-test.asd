@@ -1,5 +1,6 @@
 (asdf:defsystem "cl-parser-kit-test"
   :description "Tests for cl-parser-kit."
+  :version "0.1.0"
   :author "takeokunn"
   :license "MIT"
   :homepage "https://github.com/takeokunn/cl-parser-kit"
@@ -19,8 +20,11 @@
                (:file "tokenizer-comment-rules-test")
                (:file "tokenizer-keyword-test")
                (:file "tokenizer-identifier-test")
+               (:file "tokenizer-char-rule-test")
+               (:file "tokenizer-rules-extra-test")
                (:file "spans-test")
                (:file "diagnostics-test")
+               (:file "mutation-testing-test")
                 (:file "combinators-support")
                 (:file "combinators-fixtures")
                 (:file "combinators-core-test")
@@ -29,6 +33,16 @@
                (:file "combinators-delimited-test")
                (:file "combinators-control-test")
                (:file "combinators-transform-test")
+               (:file "combinators-choice-test")
+               (:file "combinators-repeat-test")
+               (:file "combinators-apply-test")
+               (:file "combinators-macros-test")
+               (:file "combinators-token-test")
+               (:file "combinators-recover-test")
+               (:file "combinators-backtrack-test")
+               (:file "combinators-permutation-test")
+               (:file "combinators-expression-test")
+               (:file "combinators-memoize-test")
                (:file "pratt-support")
                (:file "pratt-fixtures")
                (:file "pratt-basic-test")
@@ -36,6 +50,7 @@
                (:file "pratt-failure-test")
                (:file "pratt-source-test")
                (:file "pratt-contract-test")
+               (:file "pratt-builders-test")
                (:file "prolog-contract-test")
                (:file "parser-support")
                (:file "parser-core-test")
@@ -56,7 +71,8 @@
                (:file "examples-advanced-snippets-test")
                (:file "examples-files-test")
                (:file "examples-ops-test")
-               (:file "trees-test"))
+               (:file "trees-test")
+               (:file "trees-traversal-test"))
   :perform (asdf:test-op (op system)
              (declare (ignore op system))
              (unless (uiop:symbol-call :cl-weave

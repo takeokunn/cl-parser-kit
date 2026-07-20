@@ -60,6 +60,30 @@ sbcl --script scripts/run-examples.lisp
   - Shows a compact Pratt parser setup for expression precedence with
     `parse-pratt-all`, including postfix operators.
   - Best starting point when infix, prefix, and postfix precedence matter.
+- [`examples/operator-precedence-example.lisp`](./examples/operator-precedence-example.lisp)
+  - Shows the combinator-layer `make-expression-parser`: an operator table
+    (highest precedence first) with prefix `-`, then `*`, then `+`.
+  - Best starting point when operands and operators are arbitrary parsers rather
+    than single tokens keyed by type.
+- [`examples/json-parser-example.lisp`](./examples/json-parser-example.lisp)
+  - A complete recursive JSON parser: escaped strings, signed/exponent numbers,
+    keyword and literal rules, and a self-referential grammar via `defparser`,
+    decoding objects to alists and arrays to lists.
+  - Best starting point for a real-world, recursively nested grammar spanning the
+    whole tokenize-then-parse stack.
+- [`examples/error-recovery-example.lisp`](./examples/error-recovery-example.lisp)
+  - Panic-mode error recovery with `recover` + `skip-until`, driven by
+    `many-till`, so one parse reports every malformed statement instead of
+    aborting at the first; reads the collected diagnostics from `run-parser`'s
+    fourth value.
+  - Best starting point for multi-error reporting (linters, IDEs) where the parse
+    must continue past mistakes.
+- [`examples/csv-parser-example.lisp`](./examples/csv-parser-example.lisp)
+  - A line-oriented CSV parser keeping the newline as a real token: rows via
+    `sep-end-by` (optional trailing newline), fields via `sep-by1`, and quoted
+    fields that may contain commas.
+  - Best starting point for a delimiter-and-line structured format where
+    newlines are significant.
 - [`examples/diagnostic-example.lisp`](./examples/diagnostic-example.lisp)
   - Shows how a Pratt parse failure turns into a structured, multiline
     diagnostic string with source excerpts via `parse-pratt-source`, and how

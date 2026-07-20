@@ -18,8 +18,13 @@
          (getf metadata :source))))
 
 (defun %make-offset-span (start end &key source)
-  (let ((normalized-start (max 0 start))
-        (normalized-end (max start end)))
+  ;; NORMALIZED-END must be clamped against NORMALIZED-START, not the raw
+  ;; (possibly negative) START -- otherwise a negative START with an END that
+  ;; is negative but numerically larger (e.g. START -5, END -2) normalizes to
+  ;; START 0 / END -2, an inverted span. Untrusted external tokens (see
+  ;; TOKEN-METADATA's :SOURCE convention) may carry arbitrary START/END.
+  (let* ((normalized-start (max 0 start))
+         (normalized-end (max normalized-start end)))
     (if source
         (let* ((source-length (length source))
                (clamped-start (min normalized-start source-length))
@@ -51,6 +56,19 @@
                               (%token-metadata-source token))))
             (%make-offset-span start end :source source)))
       (%make-offset-span position position)))
+
+(defun filter-tokens (tokens predicate)
+  "Return a fresh vector of the TOKENS satisfying PREDICATE, in order.
+
+Useful for pruning a token stream before parsing -- e.g. dropping non-skipped
+comment or whitespace tokens the tokenizer emitted:
+  (filter-tokens toks (lambda (token) (not (eql (token-type token) :comment)))).
+TOKENS may be any sequence; the result is always a vector, matching TOKENIZE."
+  (let ((stream (ensure-vector tokens)))
+    (coerce (loop for token across stream
+                  when (funcall predicate token)
+                  collect token)
+            'vector)))
 
 (defun make-token (&key type text value metadata span start end)
   (let ((token (%make-token :type type

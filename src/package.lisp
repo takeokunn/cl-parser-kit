@@ -14,6 +14,8 @@
    #:span-length
    #:span-empty-p
    #:span-merge
+   #:span-contains-position-p
+   #:span-text
    ;; tokens
    #:token
    #:make-token
@@ -24,6 +26,7 @@
    #:token-span
    #:token-start
    #:token-end
+   #:filter-tokens
    ;; tokenizers
    #:token-rule
    #:make-token-rule
@@ -42,8 +45,21 @@
    #:make-number-rule
    #:make-string-rule
    #:make-predicate-rule
+   #:make-char-rule
    #:make-line-comment-rule
    #:make-block-comment-rule
+   #:make-nested-block-comment-rule
+   #:make-radix-integer-rule
+   #:make-float-rule
+   #:make-operator-rule
+   #:*maximum-number-exponent*
+   #:*maximum-tokenizer-source-length*
+   #:*maximum-tokenizer-tokens*
+   #:*maximum-number-lexeme-length*
+   #:tokenizer-resource-limit-exceeded
+   #:tokenizer-resource-limit-exceeded-kind
+   #:tokenizer-resource-limit-exceeded-value
+   #:tokenizer-resource-limit-exceeded-limit
    ;; diagnostics
    #:diagnostic
    #:make-diagnostic
@@ -54,6 +70,7 @@
    #:diagnostic-fixes
    #:diagnostic-data
    #:diagnostic->string
+   #:diagnostics->string
    #:warning-diagnostic
    #:error-diagnostic
    #:note-diagnostic
@@ -61,6 +78,8 @@
    #:make-fix-it
    #:fix-it-span
    #:fix-it-replacement
+   #:apply-fix-it
+   #:apply-fixes
    #:parse-failure
    #:make-parse-failure
    #:parse-failure-position
@@ -68,14 +87,18 @@
    #:parse-failure-actual
    #:parse-failure-diagnostics
    #:parse-failure-committed-p
+   #:parse-failure-span
    #:parse-failure->string
+   #:parse-failure->diagnostics
    #:merge-parse-failures
+   #:*maximum-diagnostic-line-length*
    ;; parser combinators
    #:parser
    #:make-parser
    #:parser-name
    #:parser-fn
    #:run-parser
+   #:*maximum-parser-recursion-depth*
    #:parse-source
    #:parse-tokens
    #:parse-all
@@ -99,6 +122,10 @@
    #:sep-end-by1
    #:opt
    #:label
+   #:context
+   #:verify
+   #:commit
+   #:current-position
    #:preceded-by
    #:terminated-by
    #:between
@@ -108,6 +135,7 @@
    #:delimited-sep-end-by1
    #:lookahead
    #:not-followed-by
+   #:not-empty
    #:map-parser
    #:bind-parser
    #:return-parser
@@ -115,6 +143,68 @@
    #:peek-token
    #:next-token
    #:eof-token-p
+   ;; choice / value combinators
+   #:choice
+   #:option
+   #:fail-parser
+   #:as-value
+   #:pure
+   #:sequence-of
+   ;; backtracking control
+   #:attempt
+   ;; packrat memoization
+   #:memoize
+   #:with-parse-memoization
+   ;; permutation
+   #:permute
+   ;; operator-precedence expression builder
+   #:make-expression-parser
+   ;; repetition combinators
+   #:times
+   #:skip-many
+   #:skip-many1
+   #:fold-many
+   #:fold-many1
+   #:chain-postfix
+   #:many-till
+   #:some-till
+   #:length-count
+   #:chainl
+   #:chainr
+   ;; applicative + span combinators
+   #:seq-map
+   #:pick
+   #:pair
+   #:separated-pair
+   #:spanning
+   #:recognize
+   ;; token-matching primitives
+   #:any-token
+   #:token-type-in
+   #:token-type-not-in
+   #:token-text-in
+   #:token-text-not-in
+   #:token-value-in
+   #:token-value-not-in
+   #:take-while
+   #:take-while1
+   #:skip-while
+   #:satisfies-value
+   ;; range repetition
+   #:times-between
+   #:at-least
+   #:at-most
+   #:end-by
+   #:end-by1
+   ;; symmetric delimiter
+   #:surrounded-by
+   ;; error recovery
+   #:skip-until
+   #:recover
+   ;; ergonomic macros
+   #:parse-let*
+   #:parser-lazy
+   #:defparser
    ;; pratt parsing
    #:pratt-table
    #:make-pratt-table
@@ -131,6 +221,14 @@
    #:register-prefix-operator
    #:register-infix-operator
    #:register-postfix-operator
+   #:register-atom
+   #:register-prefix
+   #:register-infix-left
+   #:register-infix-right
+   #:register-postfix
+   #:register-grouping
+   #:register-ternary
+   #:register-infix-non-assoc
    #:parse-pratt
    #:parse-pratt-all
    #:parse-pratt-source
@@ -143,6 +241,19 @@
    #:ast-node-span
    #:ast-node-data
    #:ast-node->sexp
+   #:sexp->ast-node
+   #:token->ast-node
+   #:ast-node-of
+   #:ast-node->string
+   #:ast-node->dot
+   #:ast-node-walk
+   #:ast-node-find
+   #:ast-node-map
+   #:ast-node-reduce
+   #:ast-node-equal
+   #:ast-node-collect
+   #:ast-node-count
+   #:ast-node-depth
    #:cst-node
    #:make-cst-node
    #:cst-node-type
@@ -150,4 +261,17 @@
    #:cst-node-children
    #:cst-node-span
    #:cst-node-data
-   #:cst-node->sexp))
+   #:cst-node->sexp
+   #:sexp->cst-node
+   #:token->cst-node
+   #:cst-node-of
+   #:cst-node->string
+   #:cst-node->dot
+   #:cst-node-walk
+   #:cst-node-find
+   #:cst-node-map
+   #:cst-node-reduce
+   #:cst-node-equal
+   #:cst-node-collect
+   #:cst-node-count
+   #:cst-node-depth))

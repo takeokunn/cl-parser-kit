@@ -1,6 +1,12 @@
 (in-package :cl-parser-kit)
 
-(defun %scan-delimited-token (source index delimiter escape-char buffer)
+(defun %decode-escape-char (char escape-map)
+  "Translate CHAR through ESCAPE-MAP (an alist of (from-char . to-char)); return
+CHAR unchanged when ESCAPE-MAP is NIL or has no entry for it."
+  (or (and escape-map (cdr (assoc char escape-map :test #'char=)))
+      char))
+
+(defun %scan-delimited-token (source index delimiter escape-char buffer &optional escape-map)
   (let ((length (length source)))
     (do ((scan index (1+ scan)))
         ((>= scan length) nil)
@@ -8,30 +14,43 @@
         (cond
           ((and escape-char (char= char escape-char))
            (when (< (1+ scan) length)
-             (write-char (char source (1+ scan)) buffer)
+             ;; With ESCAPE-MAP, an escape sequence such as \n is decoded to its
+             ;; replacement character; without one the escaped character is taken
+             ;; literally (so \" yields ", \\ yields \).
+             (write-char (%decode-escape-char (char source (1+ scan)) escape-map) buffer)
              (setf scan (1+ scan))))
           ((char= char delimiter)
            (return (1+ scan)))
           (t
            (write-char char buffer)))))))
 
-(defun %match-delimited-token (source index delimiter escape-char)
+(defun %match-delimited-token (source index delimiter escape-char &optional escape-map)
   (let ((length (length source)))
     (when (and (< index length)
                (char= (char source index) delimiter))
       (let* ((buffer (make-string-output-stream))
-             (end (%scan-delimited-token source (1+ index) delimiter escape-char buffer)))
+             (end (%scan-delimited-token source (1+ index) delimiter escape-char buffer
+                                         escape-map)))
         (when end
           (%emit-token-match source index end
                              (get-output-stream-string buffer)))))))
 
-(defun make-string-rule (&key (type :string) (delimiter #\") escape-char skip-p)
+(defun make-string-rule (&key (type :string) (delimiter #\") escape-char escapes skip-p)
+  "Match a DELIMITER-quoted string, returning the unquoted contents as the token
+VALUE.
+
+ESCAPE-CHAR, when supplied, lets a delimiter (or the escape character itself)
+appear inside the string. By default the character following ESCAPE-CHAR is taken
+literally; supply ESCAPES -- an alist of (escaped-char . replacement-char), e.g.
+'((#\\n . #\\Newline) (#\\t . #\\Tab)) -- to decode common escape sequences into
+their control characters. A character not present in ESCAPES is still taken
+literally."
   (declare (type character delimiter))
   (make-token-rule
    :type type
    :skip-p skip-p
    :matcher (lambda (source index)
-              (%match-delimited-token source index delimiter escape-char))))
+              (%match-delimited-token source index delimiter escape-char escapes))))
 
 (defun %line-comment-end (source start)
   (or (position-if #'source-line-break-p source :start start)
@@ -56,10 +75,15 @@
                      (match-end (+ index prefix-length)))
                 (when (and (<= match-end source-length)
                            (string= prefix source :start2 index :end2 match-end))
-                  (let* ((end (funcall end-fn source match-end))
-                         (text (%string-range source index end)))
-                    (%emit-token-match source index end
-                                       (funcall value-function text))))))))
+                  (let ((end (funcall end-fn source match-end)))
+                    ;; Comments are almost always skipped; a skipped match's
+                    ;; TEXT/VALUE are never read (see %TOKENIZE-RULE-MATCH),
+                    ;; so skip the %STRING-RANGE copy and VALUE-FUNCTION call.
+                    (if skip-p
+                        (values t (- end index) nil nil)
+                        (%emit-token-match source index end
+                                           (funcall value-function
+                                                    (%string-range source index end))))))))))
 
 (defun make-line-comment-rule (&key (type :comment) (prefix ";") (skip-p t) (value-function #'identity))
   (%make-prefixed-comment-rule type skip-p value-function prefix #'%line-comment-end))
@@ -69,3 +93,46 @@
   (%make-prefixed-comment-rule type skip-p value-function start
                                (lambda (source match-end)
                                  (%block-comment-end source match-end end))))
+
+(defun %nested-block-comment-end (source match-end start end)
+  ;; MATCH-END points just past the opening START delimiter, so the comment
+  ;; begins at nesting depth 1. Each further START increments the depth and each
+  ;; END decrements it; the comment closes when the depth returns to 0. An
+  ;; unterminated nested comment consumes the rest of the source, mirroring
+  ;; %BLOCK-COMMENT-END, so untrusted input that opens without closing does not
+  ;; crash %EMIT-TOKEN-MATCH.
+  (let ((length (length source))
+        (start-length (length start))
+        (end-length (length end))
+        (depth 1)
+        (index match-end))
+    (loop
+      (when (>= index length) (return length))
+      (cond
+        ((and (<= (+ index start-length) length)
+              (string= start source :start2 index :end2 (+ index start-length)))
+         (incf depth)
+         (incf index start-length))
+        ((and (<= (+ index end-length) length)
+              (string= end source :start2 index :end2 (+ index end-length)))
+         (decf depth)
+         (incf index end-length)
+         (when (zerop depth)
+           (return index)))
+        (t
+         (incf index))))))
+
+(defun make-nested-block-comment-rule (&key (type :comment) (start "/*") (end "*/") (skip-p t)
+                                         (value-function #'identity))
+  "Match a block comment delimited by START and END that may NEST -- an inner
+START opens a new level that its own END closes, so the comment terminates only
+when every level has closed.
+
+Unlike MAKE-BLOCK-COMMENT-RULE (which stops at the first END), this handles
+languages whose block comments nest, such as Rust `/* .. /* .. */ .. */` or
+Common Lisp `#| .. #| .. |# .. |#`. An unterminated comment consumes to end of
+input. START and END must be distinct, non-empty strings; comments are skipped by
+default."
+  (%make-prefixed-comment-rule type skip-p value-function start
+                               (lambda (source match-end)
+                                 (%nested-block-comment-end source match-end start end))))

@@ -6,8 +6,10 @@ this checkout.
 
 ## Reporting
 
-If you discover a security issue in `cl-parser-kit`, report it privately to the
-maintainer instead of opening a public issue.
+If you discover a security issue in `cl-parser-kit`, report it privately instead
+of opening a public issue. Use GitHub's private vulnerability reporting for this
+repository (the **Security** tab → **Report a vulnerability**), which opens a
+private advisory visible only to the maintainers.
 
 Include:
 
