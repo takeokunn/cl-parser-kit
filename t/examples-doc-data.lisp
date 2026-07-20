@@ -19,7 +19,7 @@ if?")
        "SECURITY.md"
        "CONTRIBUTING.md"
        "CODE_OF_CONDUCT.md"
-       "does not yet ship formal versioned releases"))
+       "ships tagged releases starting with `v0.1.0`"))
     ((string= document "SECURITY.md")
      '("scripts/run-compile-check.lisp"
        "nix flake check"
@@ -64,11 +64,12 @@ if?")
        "sbcl --script scripts/run-tests.lisp"
        "no guaranteed response-time SLA"))
     ((string= document "VERSIONING.md")
-     '("does not yet publish formal versioned releases"
-       "pin the exact commit"
+     '("publishes tagged releases starting with `v0.1.0`"
+       "consume a tagged release"
        "semantic versioning"))
     ((string= document "RELEASING.md")
-     '("run `nix flake check`"
+     '("ships tagged releases starting with `v0.1.0`"
+       "run `nix flake check`"
        "run `./scripts/run-release-audit.sh`"
        "run `sbcl --script scripts/run-compile-check.lisp`"
        "nix develop --command sbcl --script scripts/run-tests.lisp"
@@ -79,15 +80,12 @@ if?")
        "SECURITY.md"
        "README.md"
        "CHANGELOG.md"
-       "ROADMAP.md"
-       "repeatable CI path"))
+       "ROADMAP.md"))
     ((string= document "ROADMAP.md")
      '("repository-level `nix flake check` CI"
        "coverage"
-       "cut the first tagged release"
-       "first tagged release"
        "portability-sensitive parser and"
-       "release notes for tagged releases"
+       "keep `CHANGELOG.md` current for every tagged release"
        "public surface small and intentional"))
     ((string= document "API.md/recommended-entry-points")
      '("## Recommended Entry Points"
