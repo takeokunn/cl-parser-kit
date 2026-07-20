@@ -2,8 +2,8 @@
 
 set -u
 
-script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-project_root=$(CDPATH= cd -- "$script_dir/.." && pwd)
+script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+project_root=$(CDPATH='' cd -- "$script_dir/.." && pwd)
 failures=0
 known=0
 compile_check_script="$project_root/scripts/run-compile-check.lisp"
@@ -47,38 +47,31 @@ impl_version() {
   esac
 }
 
-command_words() {
+build_command() {
   command_name=$1
   mode=$2
   script_path=$3
 
   case "$mode" in
     sbcl-script)
-      printf '%s\n' "$command_name" --script "$script_path"
+      join_command "$command_name" --script "$script_path"
       ;;
     load)
-      printf '%s\n' "$command_name" --load "$script_path"
+      join_command "$command_name" --load "$script_path"
       ;;
     ccl-load)
-      printf '%s\n' "$command_name" --batch --no-init --load "$script_path"
+      join_command "$command_name" --batch --no-init --load "$script_path"
       ;;
     ecl-load)
-      printf '%s\n' "$command_name" --norc --load "$script_path"
+      join_command "$command_name" --norc --load "$script_path"
       ;;
     clisp-file)
-      printf '%s\n' "$command_name" -q -norc "$script_path"
+      join_command "$command_name" -q -norc "$script_path"
       ;;
     *)
       return 1
       ;;
   esac
-}
-
-build_command() {
-  command_name=$1
-  mode=$2
-  script_path=$3
-  join_command $(command_words "$command_name" "$mode" "$script_path")
 }
 
 run_check() {
@@ -98,6 +91,36 @@ run_check() {
 
   printf 'FAIL %s [%s] (exit %s)\n' "$impl_name" "$check_name" "$status"
   return 1
+}
+
+run_mode_check() {
+  impl_name=$1
+  check_name=$2
+  command_name=$3
+  mode=$4
+  script_path=$5
+
+  case "$mode" in
+    sbcl-script)
+      run_check "$impl_name" "$check_name" "$command_name" --script "$script_path"
+      ;;
+    load)
+      run_check "$impl_name" "$check_name" "$command_name" --load "$script_path"
+      ;;
+    ccl-load)
+      run_check "$impl_name" "$check_name" "$command_name" --batch --no-init --load "$script_path"
+      ;;
+    ecl-load)
+      run_check "$impl_name" "$check_name" "$command_name" --norc --load "$script_path"
+      ;;
+    clisp-file)
+      run_check "$impl_name" "$check_name" "$command_name" -q -norc "$script_path"
+      ;;
+    *)
+      printf 'FAIL %s [%s] (unknown mode %s)\n' "$impl_name" "$check_name" "$mode"
+      return 1
+      ;;
+  esac
 }
 
 run_impl() {
@@ -126,12 +149,9 @@ run_impl() {
     printf 'INFO %s version: unavailable\n' "$impl_name"
   fi
 
-  if run_check "$impl_name" compile \
-       $(command_words "$command_name" "$compile_mode" "$compile_check_script") &&
-     run_check "$impl_name" tests \
-       $(command_words "$command_name" "$tests_mode" "$run_tests_script") &&
-     run_check "$impl_name" examples \
-       $(command_words "$command_name" "$examples_mode" "$run_examples_script"); then
+  if run_mode_check "$impl_name" compile "$command_name" "$compile_mode" "$compile_check_script" &&
+     run_mode_check "$impl_name" tests "$command_name" "$tests_mode" "$run_tests_script" &&
+     run_mode_check "$impl_name" examples "$command_name" "$examples_mode" "$run_examples_script"; then
     printf 'PASS %s\n' "$impl_name"
   else
     printf 'FAIL %s\n' "$impl_name"

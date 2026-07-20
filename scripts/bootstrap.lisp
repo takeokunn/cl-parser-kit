@@ -27,6 +27,15 @@
 (defun load-asd-definition (asd-path)
   (load (probe-file asd-path)))
 
+(defun %pathname-under-directory-p (pathname directory)
+  (let ((path (namestring (truename pathname)))
+        (root (namestring (uiop:ensure-directory-pathname (truename directory)))))
+    (and (<= (length root) (length path))
+         (string= root path :end2 (length root)))))
+
+(defun %dependency-source-root (asd-path)
+  (uiop:pathname-directory-pathname asd-path))
+
 (defmacro with-source-load-evaluator (&body body)
   #+sbcl
   `(let ((sb-ext:*evaluator-mode* :interpret))
@@ -59,9 +68,9 @@
 (defun load-test-dependency-asd-definitions (project-root)
   (dolist (spec *test-dependency-specs*)
     (destructuring-bind (env-var fallback-directory asd-name system-names) spec
-      (declare (ignore system-names))
-      (load-asd-definition
-       (locate-dependency-asd project-root env-var fallback-directory asd-name)))))
+      (let ((asd-path (locate-dependency-asd project-root env-var fallback-directory asd-name)))
+        (dolist (system-name system-names)
+          (system-source-files-from-asd asd-path system-name))))))
 
 (defun component-property (component key)
   (getf (cddr component) key))
@@ -73,14 +82,15 @@
 
 (defun find-defsystem-form (asd-path system-name)
   (with-open-file (stream asd-path :direction :input)
-    (loop for form = (read stream nil nil)
-          while form
-          when (and (defsystem-form-p form)
-                    (string= (normalize-system-name (second form))
-                             (normalize-system-name system-name)))
-            do (return form)
-          finally
-             (error "Missing defsystem ~A in ~A." system-name asd-path))))
+    (let ((*read-eval* nil))
+      (loop for form = (read stream nil nil)
+            while form
+            when (and (defsystem-form-p form)
+                      (string= (normalize-system-name (second form))
+                               (normalize-system-name system-name)))
+              do (return form)
+            finally
+               (error "Missing defsystem ~A in ~A." system-name asd-path)))))
 
 (defun relative-source-pathname (pathspec)
   (let ((pathname (uiop:parse-unix-namestring (format nil "~A" pathspec))))
@@ -92,12 +102,22 @@
   (uiop:ensure-directory-pathname
    (uiop:parse-unix-namestring (format nil "~A" pathspec))))
 
-(defun component-source-files (component parent-directory)
+(defun %validate-source-file-pathname (pathname source-root)
+  (let ((source-file (resolve-source-file-pathname pathname)))
+    (unless (%pathname-under-directory-p source-file source-root)
+      (error "ASD component path ~A escapes source root ~A."
+             source-file
+             source-root))
+    source-file))
+
+(defun component-source-files (component parent-directory source-root)
   (case (car component)
     (:file
-     (list (merge-pathnames
-            (relative-source-pathname (second component))
-            parent-directory)))
+     (list (%validate-source-file-pathname
+            (merge-pathnames
+             (relative-source-pathname (second component))
+             parent-directory)
+            source-root)))
     (:module
      (let ((module-directory
              (merge-pathnames
@@ -106,7 +126,7 @@
                    (second component)))
               parent-directory)))
        (loop for child in (component-property component :components)
-             append (component-source-files child module-directory))))
+             append (component-source-files child module-directory source-root))))
     (t
      nil)))
 
@@ -116,9 +136,10 @@
          (base-directory
            (merge-pathnames
             (relative-directory-pathname (or (getf options :pathname) ""))
-            (uiop:pathname-directory-pathname asd-path))))
+            (uiop:pathname-directory-pathname asd-path)))
+         (source-root (%dependency-source-root asd-path)))
     (loop for component in (getf options :components)
-          append (component-source-files component base-directory))))
+          append (component-source-files component base-directory source-root))))
 
 (defun resolve-source-file-pathname (pathname)
   (or (probe-file pathname)
@@ -135,10 +156,15 @@
    (format nil "~4,'0D-~A.fasl" index (pathname-name pathname))
    output-root))
 
+(defun compile-output-root ()
+  (uiop:ensure-directory-pathname
+   (merge-pathnames
+    (format nil "cl-parser-kit-compile-~36R/"
+            (logxor (get-universal-time) (sxhash (gensym "COMPILE"))))
+    (uiop:temporary-directory))))
+
 (defun compile-system-source-files (asd-path system-name)
-  (let ((output-root
-          (uiop:ensure-directory-pathname
-           (uiop:temporary-directory))))
+  (let ((output-root (compile-output-root)))
     (ensure-directories-exist output-root)
     (loop for pathname in (system-source-files-from-asd asd-path system-name)
           for source-file = (resolve-source-file-pathname pathname)
