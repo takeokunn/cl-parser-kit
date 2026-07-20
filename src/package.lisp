@@ -82,6 +82,7 @@
    #:fix-it-replacement
    #:apply-fix-it
    #:apply-fixes
+   #:*maximum-diagnostic-fix-count*
    #:parse-failure
    #:make-parse-failure
    #:parse-failure-position
@@ -93,7 +94,19 @@
    #:parse-failure->string
    #:parse-failure->diagnostics
    #:merge-parse-failures
+   #:*maximum-parse-failure-expected-count*
+   #:*maximum-parse-failure-diagnostic-count*
+   #:parse-failure-resource-limit-exceeded
+   #:parse-failure-resource-limit-exceeded-kind
+   #:parse-failure-resource-limit-exceeded-value
+   #:parse-failure-resource-limit-exceeded-limit
    #:*maximum-diagnostic-line-length*
+   #:*maximum-diagnostic-related-count*
+   #:*maximum-diagnostic-count*
+   #:diagnostic-resource-limit-exceeded
+   #:diagnostic-resource-limit-exceeded-kind
+   #:diagnostic-resource-limit-exceeded-value
+   #:diagnostic-resource-limit-exceeded-limit
    ;; parser combinators
    #:parser
    #:make-parser

@@ -33,10 +33,9 @@ SPAN-START-LINE / SPAN-START-COLUMN accessors."
   (mapcar #'%parse-failure-item->string items))
 
 (defun %parse-failure-item-list (expected)
-  (cond
-    ((null expected) nil)
-    ((listp expected) expected)
-    (t (list expected))))
+  (%ensure-parse-failure-list-count :expected-count
+                                    expected
+                                    *maximum-parse-failure-expected-count*))
 
 (defun %join-expected-items (items)
   (let ((rendered (%parse-failure-items->strings items)))
@@ -59,7 +58,11 @@ SPAN-START-LINE / SPAN-START-COLUMN accessors."
       (t (format nil "one of ~A" (%join-expected-items items))))))
 
 (defun %parse-failure-diagnostics-list (failure)
-  (remove nil (ensure-list (parse-failure-diagnostics failure))))
+  (remove nil
+          (%ensure-parse-failure-list-count
+           :diagnostic-count
+           (parse-failure-diagnostics failure)
+           *maximum-parse-failure-diagnostic-count*)))
 
 (defun %parse-failure-default-span (failure actual)
   (cond
@@ -79,12 +82,36 @@ SPAN-START-LINE / SPAN-START-COLUMN accessors."
      :span (%parse-failure-default-span failure actual))))
 
 (defun %write-diagnostics (diagnostics out)
-  (loop for diagnostic in diagnostics
-        for firstp = t then nil
-        do (unless firstp
-             (terpri out)
-             (terpri out))
-           (%write-diagnostic diagnostic out)))
+  (labels ((limit-exceeded (value)
+             (error 'diagnostic-resource-limit-exceeded
+                    :kind :diagnostic-count
+                    :value value
+                    :limit *maximum-diagnostic-count*))
+           (write-one (diagnostic firstp)
+             (when diagnostic
+               (unless firstp
+                 (terpri out)
+                 (terpri out))
+               (%write-diagnostic diagnostic out)
+               nil)))
+    (if (consp diagnostics)
+        (loop with count = 0
+              with firstp = t
+              with seen = (make-hash-table :test 'eq)
+              for tail = diagnostics then (cdr tail)
+              while (consp tail)
+              for diagnostic = (car tail)
+              do (when (gethash tail seen)
+                   (limit-exceeded (1+ *maximum-diagnostic-count*)))
+                 (setf (gethash tail seen) t)
+                 (incf count)
+                 (when (> count *maximum-diagnostic-count*)
+                   (limit-exceeded count))
+                 (setf firstp (write-one diagnostic firstp))
+              finally
+                 (unless (null tail)
+                   (limit-exceeded (1+ *maximum-diagnostic-count*))))
+        (write-one diagnostics t))))
 
 (defun parse-failure->diagnostics (failure)
   "Return the list of structured DIAGNOSTIC objects describing FAILURE: its
@@ -98,13 +125,16 @@ rather than the built-in string form. Always returns at least one diagnostic."
       (list (%parse-failure-default-diagnostic failure))))
 
 (defun parse-failure->string (failure)
-  (with-output-to-string (out)
-    (%write-diagnostics (parse-failure->diagnostics failure) out)))
+  (let ((*diagnostic-source-line-start-cache* (make-hash-table :test 'eq)))
+    (with-output-to-string (out)
+      (%write-diagnostics (parse-failure->diagnostics failure) out))))
 
 (defun diagnostics->string (diagnostics)
   "Render a LIST of diagnostics as one string, each rendered by DIAGNOSTIC->STRING
-and separated by a blank line; NIL entries are ignored. The multi-diagnostic form
-of DIAGNOSTIC->STRING, handy for a recovery parse's collected diagnostics or the
-result of PARSE-FAILURE->DIAGNOSTICS."
-  (with-output-to-string (out)
-    (%write-diagnostics (remove nil diagnostics) out)))
+and separated by a blank line; NIL entries are ignored for output but still
+counted against *MAXIMUM-DIAGNOSTIC-COUNT* while streaming. The
+multi-diagnostic form of DIAGNOSTIC->STRING, handy for a recovery parse's
+collected diagnostics or the result of PARSE-FAILURE->DIAGNOSTICS."
+  (let ((*diagnostic-source-line-start-cache* (make-hash-table :test 'eq)))
+    (with-output-to-string (out)
+      (%write-diagnostics diagnostics out))))

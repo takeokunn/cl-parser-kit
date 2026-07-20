@@ -1,5 +1,10 @@
 (in-package :cl-parser-kit/test)
 
+(defun %circular-list (&rest items)
+  (let ((list (copy-list items)))
+    (setf (cdr (last list)) list)
+    list))
+
 (it-sequential "diagnostic-cr-only-source-line-context-test"
   ;; A classic-Mac (CR-only) source must still resolve the correct context line
   ;; under a caret; line splitting has to agree with advance-position.
@@ -47,6 +52,57 @@
     (expect (first lengths) :to-equal (second lengths))
     (expect (< (first lengths) 1000) :to-be-truthy)))
 
+(it-sequential "diagnostic-related-count-limit-caps-notes-test"
+  (let ((*maximum-diagnostic-related-count* 2))
+    (let ((diagnostic (make-diagnostic :message "too many notes"
+                                       :notes (list (note-diagnostic "one")
+                                                    (note-diagnostic "two")
+                                                    (note-diagnostic "three")))))
+      (expect (lambda () (diagnostic->string diagnostic))
+              :to-throw 'diagnostic-resource-limit-exceeded))))
+
+(it-sequential "diagnostic-related-count-limit-caps-circular-notes-test"
+  (let ((*maximum-diagnostic-related-count* 2))
+    (let ((diagnostic (make-diagnostic
+                       :message "circular notes"
+                       :notes (%circular-list (note-diagnostic "one")
+                                             (note-diagnostic "two")))))
+      (expect (lambda () (diagnostic->string diagnostic))
+              :to-throw 'diagnostic-resource-limit-exceeded))))
+
+(it-sequential "diagnostic-related-count-limit-rejects-improper-notes-test"
+  (let ((diagnostic (make-diagnostic
+                     :message "improper notes"
+                     :notes (cons (note-diagnostic "one") :tail))))
+    (expect (lambda () (diagnostic->string diagnostic))
+            :to-throw 'diagnostic-resource-limit-exceeded)))
+
+(it-sequential "diagnostic-related-count-limit-caps-fix-its-test"
+  (let ((*maximum-diagnostic-related-count* 2))
+    (let ((diagnostic (make-diagnostic
+                       :message "too many fixes"
+                       :fixes (list (make-fix-it :replacement "one")
+                                    (make-fix-it :replacement "two")
+                                    (make-fix-it :replacement "three")))))
+      (expect (lambda () (diagnostic->string diagnostic))
+              :to-throw 'diagnostic-resource-limit-exceeded))))
+
+(it-sequential "diagnostic-related-count-limit-caps-circular-fix-its-test"
+  (let ((*maximum-diagnostic-related-count* 2))
+    (let ((diagnostic (make-diagnostic
+                       :message "circular fixes"
+                       :fixes (%circular-list (make-fix-it :replacement "one")
+                                             (make-fix-it :replacement "two")))))
+      (expect (lambda () (diagnostic->string diagnostic))
+              :to-throw 'diagnostic-resource-limit-exceeded))))
+
+(it-sequential "diagnostic-related-count-limit-rejects-improper-fix-its-test"
+  (let ((diagnostic (make-diagnostic
+                     :message "improper fixes"
+                     :fixes (cons (make-fix-it :replacement "one") :tail))))
+    (expect (lambda () (diagnostic->string diagnostic))
+            :to-throw 'diagnostic-resource-limit-exceeded)))
+
 (it-sequential "parse-failure-string-joins-three-or-more-expected-items-test"
   ;; Exercises the comma-joined branch of the expected-item formatter (2-item
   ;; "X or Y" is covered elsewhere; 3+ items use a distinct code path).
@@ -75,6 +131,62 @@
          (diagnostics (parse-failure->diagnostics failure)))
     (expect diagnostics :to-equal (list note))))
 
+(it-sequential "parse-failure-expected-count-limit-caps-rendering-test"
+  (let ((*maximum-parse-failure-expected-count* 2)
+        (failure (make-parse-failure :position 0
+                                     :expected '(:one :two :three)
+                                     :actual :plus)))
+    (expect (lambda () (parse-failure->string failure))
+            :to-throw 'parse-failure-resource-limit-exceeded)))
+
+(it-sequential "parse-failure-expected-count-limit-caps-circular-rendering-test"
+  (let ((*maximum-parse-failure-expected-count* 2)
+        (failure (make-parse-failure :position 0
+                                     :expected (%circular-list :one :two)
+                                     :actual :plus)))
+    (expect (lambda () (parse-failure->string failure))
+            :to-throw 'parse-failure-resource-limit-exceeded)))
+
+(it-sequential "parse-failure-expected-list-rejects-improper-rendering-test"
+  (let ((failure (make-parse-failure :position 0
+                                     :expected (cons :one :two)
+                                     :actual :plus)))
+    (expect (lambda () (parse-failure->string failure))
+            :to-throw 'parse-failure-resource-limit-exceeded)))
+
+(it-sequential "parse-failure-diagnostic-count-limit-caps-rendering-test"
+  (let* ((*maximum-parse-failure-diagnostic-count* 2)
+         (failure (make-parse-failure
+                   :position 0
+                   :expected :identifier
+                   :actual :plus
+                   :diagnostics (list (error-diagnostic "one")
+                                      (error-diagnostic "two")
+                                      (error-diagnostic "three")))))
+    (expect (lambda () (parse-failure->diagnostics failure))
+            :to-throw 'parse-failure-resource-limit-exceeded)))
+
+(it-sequential "parse-failure-diagnostic-count-limit-caps-circular-rendering-test"
+  (let* ((*maximum-parse-failure-diagnostic-count* 2)
+         (failure (make-parse-failure
+                   :position 0
+                   :expected :identifier
+                   :actual :plus
+                   :diagnostics (%circular-list (error-diagnostic "one")
+                                               (error-diagnostic "two")))))
+    (expect (lambda () (parse-failure->diagnostics failure))
+            :to-throw 'parse-failure-resource-limit-exceeded)))
+
+(it-sequential "parse-failure-diagnostic-list-rejects-improper-rendering-test"
+  (let ((failure (make-parse-failure
+                  :position 0
+                  :expected :identifier
+                  :actual :plus
+                  :diagnostics (cons (error-diagnostic "one")
+                                     (error-diagnostic "two")))))
+    (expect (lambda () (parse-failure->diagnostics failure))
+            :to-throw 'parse-failure-resource-limit-exceeded)))
+
 (it-sequential "apply-fix-it-replaces-span-region-test"
   ;; Replace "teh" (offsets 4..7) with "the".
   (let ((fix (make-fix-it :span (make-span :start 4 :end 7) :replacement "the")))
@@ -85,12 +197,89 @@
   (let ((fix (make-fix-it :span (make-span :start 3 :end 5) :replacement nil)))
     (expect (apply-fix-it "abc  def" fix) :to-equal "abcdef")))
 
+(it-sequential "apply-fix-it-clamps-out-of-range-spans-test"
+  (let ((prefix (make-fix-it :span (make-span :start -5 :end 2) :replacement "AB"))
+        (suffix (make-fix-it :span (make-span :start 10 :end 20) :replacement "Z")))
+    (expect (apply-fix-it "abcde" prefix) :to-equal "ABcde")
+    (expect (apply-fix-it "abcde" suffix) :to-equal "abcdeZ")))
+
 (it-sequential "apply-fixes-applies-multiple-back-to-front-test"
   ;; Two edits whose earlier one would shift the later's offsets if applied
   ;; front-to-back; APPLY-FIXES orders them so both land correctly.
   (let ((fixes (list (make-fix-it :span (make-span :start 0 :end 1) :replacement "X")
                      (make-fix-it :span (make-span :start 4 :end 5) :replacement "Y"))))
     (expect (apply-fixes "a b c" fixes) :to-equal "X b Y")))
+
+(it-sequential "apply-fixes-handles-many-non-overlapping-edits-test"
+  (let* ((source (make-string 10000 :initial-element #\a))
+         (fixes (loop for index below 1000 by 2
+                      collect (make-fix-it :span (make-span :start index :end (1+ index))
+                                           :replacement "b")))
+         (fixed (apply-fixes source fixes)))
+    (expect (length fixed) :to-equal (length source))
+    (loop for index below 1000 by 2
+          do (expect (char fixed index) :to-equal #\b))
+      (loop for index from 1 below 1000 by 2
+            do (expect (char fixed index) :to-equal #\a))))
+
+(it-sequential "apply-fixes-handles-many-same-anchor-insertions-test"
+  (let* ((fixes (loop for index below 1000
+                      collect (make-fix-it :span (make-span :start 1 :end 1)
+                                           :replacement (write-to-string (mod index 10)))))
+         (fixed (apply-fixes "ab" fixes)))
+    (expect (length fixed) :to-equal 1002)
+    (expect (subseq fixed 0 12) :to-equal "a01234567890")
+    (expect (subseq fixed (- (length fixed) 11)) :to-equal "0123456789b")))
+
+(it-sequential "apply-fixes-preserves-overlapping-fallback-behavior-test"
+  (let ((fixes (list (make-fix-it :span (make-span :start 0 :end 3) :replacement "X")
+                     (make-fix-it :span (make-span :start 2 :end 4) :replacement "Y"))))
+    (expect (apply-fixes "abcd" fixes)
+            :to-equal
+            (reduce (lambda (current fix) (apply-fix-it current fix))
+                    (stable-sort (copy-list fixes)
+                                 #'>
+                                 :key (lambda (fix) (span-start (fix-it-span fix))))
+                    :initial-value "abcd"))))
+
+(it-sequential "apply-fixes-preserves-same-start-overlapping-fallback-order-test"
+  (let ((fixes (list (make-fix-it :span (make-span :start 0 :end 2) :replacement "X")
+                     (make-fix-it :span (make-span :start 0 :end 1) :replacement "Y"))))
+    (expect (apply-fixes "abcd" fixes)
+            :to-equal
+            (reduce (lambda (current fix) (apply-fix-it current fix))
+                    (stable-sort (copy-list fixes)
+                                 #'>
+                                 :key (lambda (fix) (span-start (fix-it-span fix))))
+                    :initial-value "abcd"))))
+
+(it-sequential "apply-fixes-preserves-out-of-range-fallback-behavior-test"
+  (let ((fixes (list (make-fix-it :span (make-span :start 10 :end 14) :replacement "TT")
+                     (make-fix-it :span (make-span :start 9 :end 16) :replacement "N")
+                     (make-fix-it :span (make-span :start 10 :end 15) :replacement "U")
+                     (make-fix-it :span (make-span :start 4 :end 8) :replacement "BB"))))
+    (expect (apply-fixes "sqjhbkqgg" fixes)
+            :to-equal
+            (reduce (lambda (current fix) (apply-fix-it current fix))
+                    (stable-sort (copy-list fixes)
+                                 #'>
+                                 :key (lambda (fix) (span-start (fix-it-span fix))))
+                    :initial-value "sqjhbkqgg"))))
+
+(it-sequential "apply-fixes-handles-many-overlapping-edits-test"
+  (let* ((source (make-string 10000 :initial-element #\a))
+         (fixes (loop for index below 1000
+                      collect (make-fix-it :span (make-span :start index
+                                                            :end (+ index 2))
+                                           :replacement "b")))
+         (fixed (apply-fixes source fixes)))
+    (expect fixed
+            :to-equal
+            (reduce (lambda (current fix) (apply-fix-it current fix))
+                    (stable-sort (copy-list fixes)
+                                 #'>
+                                 :key (lambda (fix) (span-start (fix-it-span fix))))
+                    :initial-value source))))
 
 (it-sequential "apply-fixes-uses-diagnostic-fixes-test"
   (let* ((diagnostic (error-diagnostic "typo"
@@ -100,12 +289,85 @@
          (fixed (apply-fixes "yo there" (diagnostic-fixes diagnostic))))
     (expect fixed :to-equal "hi there")))
 
+(it-sequential "apply-fixes-count-limit-caps-fix-list-test"
+  (let ((*maximum-diagnostic-fix-count* 2)
+        (fixes (list nil
+                     (make-fix-it :span (make-span :start 0 :end 1)
+                                  :replacement "a")
+                     (make-fix-it :span (make-span :start 1 :end 2)
+                                  :replacement "b"))))
+    (expect (lambda () (apply-fixes "xy" fixes))
+            :to-throw 'diagnostic-resource-limit-exceeded)))
+
+(it-sequential "apply-fixes-count-limit-caps-circular-nil-fix-list-test"
+  (let ((*maximum-diagnostic-fix-count* 2))
+    (expect (lambda () (apply-fixes "xy" (%circular-list nil nil)))
+            :to-throw 'diagnostic-resource-limit-exceeded)))
+
+(it-sequential "apply-fixes-count-limit-rejects-improper-fix-list-test"
+  (let ((fixes (cons (make-fix-it :span (make-span :start 0 :end 1)
+                                  :replacement "a")
+                     :not-a-list)))
+    (expect (lambda () (apply-fixes "xy" fixes))
+            :to-throw 'diagnostic-resource-limit-exceeded)))
+
 (it-sequential "diagnostics-string-renders-list-test"
   (let* ((first-diagnostic (error-diagnostic "first problem"))
          (second-diagnostic (warning-diagnostic "second problem"))
          (rendered (diagnostics->string (list first-diagnostic nil second-diagnostic))))
     (expect (search "first problem" rendered) :to-be-truthy)
     (expect (search "second problem" rendered) :to-be-truthy)))
+
+(it-sequential "diagnostics-string-count-limit-caps-diagnostic-list-test"
+  (let ((*maximum-diagnostic-count* 2)
+        (diagnostics (list (error-diagnostic "one")
+                           nil
+                           (warning-diagnostic "two")
+                           (note-diagnostic "three"))))
+    (expect (lambda () (diagnostics->string diagnostics))
+            :to-throw 'diagnostic-resource-limit-exceeded)))
+
+(it-sequential "diagnostics-string-count-limit-caps-nil-diagnostic-list-test"
+  (let ((*maximum-diagnostic-count* 2))
+    (expect (lambda () (diagnostics->string (list nil nil nil)))
+            :to-throw 'diagnostic-resource-limit-exceeded)))
+
+(it-sequential "diagnostics-string-count-limit-caps-circular-nil-diagnostic-list-test"
+  (let ((*maximum-diagnostic-count* 2))
+    (expect (lambda () (diagnostics->string (%circular-list nil nil)))
+            :to-throw 'diagnostic-resource-limit-exceeded)))
+
+(it-sequential "diagnostics-string-count-limit-rejects-improper-diagnostic-list-test"
+  (let ((diagnostics (cons (error-diagnostic "one") :tail)))
+    (expect (lambda () (diagnostics->string diagnostics))
+            :to-throw 'diagnostic-resource-limit-exceeded)))
+
+(it-sequential "diagnostics-string-reuses-source-line-cache-test"
+  (let* ((source (format nil "first~%second~%third"))
+         (diagnostics (loop repeat 5
+                            collect (error-diagnostic
+                                     "boom"
+                                     :span (make-span :source source
+                                                      :start 6 :end 12
+                                                      :start-line 2 :start-column 1
+                                                      :end-line 2 :end-column 7))))
+         (rendered (diagnostics->string diagnostics)))
+    (expect (count #\^ rendered) :to-equal 30)
+    (expect (search "second" rendered) :to-be-truthy)))
+
+(it-sequential "diagnostic-source-line-cache-computes-once-per-source-test"
+  (let* ((source (format nil "first~%second~%third"))
+         (cl-parser-kit::*diagnostic-source-line-start-cache* (make-hash-table :test 'eq)))
+    (expect (hash-table-count cl-parser-kit::*diagnostic-source-line-start-cache*)
+            :to-equal 0)
+    (expect (cl-parser-kit::%source-line-at source 2) :to-equal "second")
+    (let ((cached (gethash source cl-parser-kit::*diagnostic-source-line-start-cache*)))
+      (expect (hash-table-count cl-parser-kit::*diagnostic-source-line-start-cache*)
+              :to-equal 1)
+      (expect (cl-parser-kit::%source-line-at source 3) :to-equal "third")
+      (expect (eq cached
+                  (gethash source cl-parser-kit::*diagnostic-source-line-start-cache*))
+              :to-be-truthy))))
 
 (it-sequential "parse-failure-string-renders-token-and-string-expectations-test"
   ;; A type-less token falls back to its printed text, and a raw string
@@ -170,6 +432,45 @@
     (let ((merged (merge-parse-failures left right)))
       (expect (parse-failure-committed-p merged) :to-be-truthy)
       (expect (parse-failure-diagnostics merged) :to-equal (list left-diagnostic right-diagnostic)))))
+
+(it-sequential "parse-failure-merge-rejects-excessive-expected-list-test"
+  (let ((*maximum-parse-failure-expected-count* 2)
+        (left (make-parse-failure :position 1 :expected '(:one :two) :actual :plus))
+        (right (make-parse-failure :position 1 :expected :three :actual :plus)))
+    (expect (lambda () (merge-parse-failures left right))
+            :to-throw 'parse-failure-resource-limit-exceeded)))
+
+(it-sequential "parse-failure-merge-rejects-improper-expected-list-test"
+  (let ((left (make-parse-failure :position 1 :expected (cons :one :two) :actual :plus))
+        (right (make-parse-failure :position 1 :expected :three :actual :plus)))
+    (expect (lambda () (merge-parse-failures left right))
+            :to-throw 'parse-failure-resource-limit-exceeded)))
+
+(it-sequential "parse-failure-merge-rejects-excessive-diagnostic-list-test"
+  (let* ((*maximum-parse-failure-diagnostic-count* 2)
+         (left (make-parse-failure :position 1
+                                   :expected :identifier
+                                   :actual :plus
+                                   :diagnostics (list (error-diagnostic "one")
+                                                      (error-diagnostic "two"))))
+         (right (make-parse-failure :position 1
+                                    :expected :number
+                                    :actual :plus
+                                    :diagnostics (list (error-diagnostic "three")))))
+    (expect (lambda () (merge-parse-failures left right))
+            :to-throw 'parse-failure-resource-limit-exceeded)))
+
+(it-sequential "parse-failure-merge-rejects-improper-diagnostic-list-test"
+  (let ((left (make-parse-failure :position 1
+                                  :expected :identifier
+                                  :actual :plus
+                                  :diagnostics (cons (error-diagnostic "one")
+                                                     (error-diagnostic "two"))))
+        (right (make-parse-failure :position 1
+                                   :expected :number
+                                   :actual :plus)))
+    (expect (lambda () (merge-parse-failures left right))
+            :to-throw 'parse-failure-resource-limit-exceeded)))
 
 (it-sequential "parse-failure-string-test"
   (let* ((diagnostic (error-diagnostic "bad token"

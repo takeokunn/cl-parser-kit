@@ -25,11 +25,79 @@ adversarially long line -- would make rendering ONE diagnostic allocate
 output proportional to that line's full length. Longer lines are truncated
 with an ellipsis; rebind or SETF to show more context.")
 
+(defparameter *maximum-diagnostic-related-count* 1000
+  "Maximum number of notes or fix-its DIAGNOSTIC->STRING renders for one diagnostic.")
+
+(defparameter *maximum-diagnostic-count* 1000
+  "Maximum number of input entries DIAGNOSTICS->STRING consumes in one batch.
+NIL entries are skipped for rendering but still counted so nil-only or circular
+batches terminate.")
+
+(define-condition diagnostic-resource-limit-exceeded (error)
+  ((kind :initarg :kind :reader diagnostic-resource-limit-exceeded-kind)
+   (value :initarg :value :reader diagnostic-resource-limit-exceeded-value)
+   (limit :initarg :limit :reader diagnostic-resource-limit-exceeded-limit))
+  (:report (lambda (condition stream)
+             (format stream "Diagnostic ~A count ~D exceeds maximum ~D"
+                     (diagnostic-resource-limit-exceeded-kind condition)
+                     (diagnostic-resource-limit-exceeded-value condition)
+                     (diagnostic-resource-limit-exceeded-limit condition)))))
+
 (defun %bounded-line-text (source start end)
   (let ((capped-end (min end (+ start *maximum-diagnostic-line-length*))))
     (if (< capped-end end)
         (concatenate 'string (subseq source start capped-end) "...")
         (subseq source start end))))
+
+(defvar *diagnostic-source-line-start-cache* nil)
+
+(defun %compute-source-line-starts (source)
+  (let ((starts (list 0))
+        (index 0)
+        (length (length source)))
+    (loop while (< index length)
+          do (let ((char (char source index)))
+               (cond
+                 ((char= char #\Return)
+                  (setf index
+                        (if (and (< (1+ index) length)
+                                 (char= (char source (1+ index)) #\Newline))
+                            (+ index 2)
+                            (1+ index)))
+                  (push index starts))
+                 ((source-line-break-p char)
+                  (incf index)
+                  (push index starts))
+                 (t
+                  (incf index)))))
+    (coerce (nreverse starts) 'vector)))
+
+(defun %source-line-starts (source)
+  (if *diagnostic-source-line-start-cache*
+      (multiple-value-bind (starts presentp)
+          (gethash source *diagnostic-source-line-start-cache*)
+        (if presentp
+            starts
+            (setf (gethash source *diagnostic-source-line-start-cache*)
+                  (%compute-source-line-starts source))))
+      (%compute-source-line-starts source)))
+
+(defun %bounded-line-text-from-start (source start)
+  (let* ((length (length source))
+         (limit (min length (+ start *maximum-diagnostic-line-length*)))
+         (index start))
+    (loop while (< index limit)
+          do (let ((char (char source index)))
+               (when (or (char= char #\Return)
+                         (source-line-break-p char))
+                 (return-from %bounded-line-text-from-start
+                   (subseq source start index)))
+               (incf index)))
+    (if (and (< limit length)
+             (not (or (char= (char source limit) #\Return)
+                      (source-line-break-p (char source limit)))))
+        (concatenate 'string (subseq source start limit) "...")
+        (subseq source start limit))))
 
 (defun %source-line-at (source line-number)
   ;; A single forward scan that stops at LINE-NUMBER instead of splitting the
@@ -38,6 +106,12 @@ with an ellipsis; rebind or SETF to show more context.")
   ;; otherwise a CR-only source would render the wrong context line under a
   ;; caret.
   (when (and source (plusp line-number))
+    (when *diagnostic-source-line-start-cache*
+      (let ((starts (%source-line-starts source)))
+        (when (<= line-number (length starts))
+          (return-from %source-line-at
+            (%bounded-line-text-from-start source
+                                           (aref starts (1- line-number)))))))
     (block found
       (let ((length (length source))
             (current-line 1)
@@ -106,6 +180,32 @@ with an ellipsis; rebind or SETF to show more context.")
   (write-string ": replace with " out)
   (prin1 (fix-it-replacement fix-it) out))
 
+(defun %write-diagnostic-related-items (items kind writer out)
+  (labels ((limit-exceeded (value)
+             (error 'diagnostic-resource-limit-exceeded
+                    :kind kind
+                    :value value
+                    :limit *maximum-diagnostic-related-count*)))
+    (if (consp items)
+        (loop with count = 0
+              with seen = (make-hash-table :test 'eq)
+              for tail = items then (cdr tail)
+              while (consp tail)
+              for item = (car tail)
+              do (when (gethash tail seen)
+                   (limit-exceeded (1+ *maximum-diagnostic-related-count*)))
+                 (setf (gethash tail seen) t)
+                 (incf count)
+                 (when (> count *maximum-diagnostic-related-count*)
+                   (limit-exceeded count))
+                 (when item
+                   (funcall writer out item))
+              finally
+                 (unless (null tail)
+                   (limit-exceeded (1+ *maximum-diagnostic-related-count*))))
+        (when items
+          (funcall writer out items)))))
+
 (defun %write-diagnostic (diagnostic out)
   (write-string (string-downcase (symbol-name (diagnostic-kind diagnostic))) out)
   (write-string ": " out)
@@ -114,12 +214,10 @@ with an ellipsis; rebind or SETF to show more context.")
     (%write-span-reference out span)
     (when span
       (%write-span-context out span)))
-  (dolist (note (diagnostic-notes diagnostic))
-    (when note
-      (%write-note out note)))
-  (dolist (fix-it (diagnostic-fixes diagnostic))
-    (when fix-it
-      (%write-fix-it out fix-it))))
+  (%write-diagnostic-related-items
+   (diagnostic-notes diagnostic) :notes #'%write-note out)
+  (%write-diagnostic-related-items
+   (diagnostic-fixes diagnostic) :fixes #'%write-fix-it out))
 
 (defun diagnostic->string (diagnostic)
   (with-output-to-string (out)
