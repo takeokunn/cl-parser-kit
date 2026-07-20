@@ -111,9 +111,9 @@ If you keep personal projects in `~/common-lisp/`, one typical setup is:
 (asdf:load-system :cl-parser-kit)
 ```
 
-The repository does not yet ship formal versioned releases. For production or
-team use, pin a reviewed commit and rerun the verification entry point from
-that checkout.
+The repository ships tagged releases starting with `v0.1.0`. For production or
+team use, pin a tagged release (or a reviewed commit) and rerun the
+verification entry point from that checkout.
 
 ## Verification
 

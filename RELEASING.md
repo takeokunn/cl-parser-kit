@@ -1,7 +1,7 @@
 # Releasing
 
-`cl-parser-kit` does not yet ship formal releases, but the release gate should
-already be explicit.
+`cl-parser-kit` ships tagged releases starting with `v0.1.0`; the release gate
+below applies to every release, not only the first.
 
 ## Release Gate
 
@@ -28,18 +28,9 @@ Before cutting a public release:
    and remaining public gaps honestly
 10. summarize user-visible changes in `CHANGELOG.md`
 
-## First Release Expectations
+## After a Release
 
-The first tagged release should happen only after:
-
-- the repository has a repeatable CI path, not only manual local execution
-- the support boundary is still narrow and honestly documented
-- the exported API and examples are stable enough to be treated as public
-  contract
-
-## After Releases Exist
-
-Once tagged releases begin:
+Once a release is tagged:
 
 - record every user-visible API or behavior change in `CHANGELOG.md`
 - keep migration notes with any breaking change
