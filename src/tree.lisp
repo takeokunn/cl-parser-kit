@@ -1,5 +1,101 @@
 (in-package :cl-parser-kit)
 
+(defparameter *maximum-tree-depth* 100000
+  "Maximum AST/CST depth accepted by tree traversal, conversion, comparison, and
+rendering helpers. Rebind or SETF to raise it for intentionally deep generated
+trees.")
+
+(defparameter *maximum-tree-nodes* 1000000
+  "Maximum AST/CST node count visited by one tree helper call.")
+
+(define-condition tree-depth-limit-exceeded (error)
+  ((depth :initarg :depth :reader tree-depth-limit-depth)
+   (limit :initarg :limit :reader tree-depth-limit-limit))
+  (:report (lambda (condition stream)
+             (format stream "Tree depth ~D exceeds maximum ~D"
+                     (tree-depth-limit-depth condition)
+                     (tree-depth-limit-limit condition)))))
+
+(define-condition tree-node-limit-exceeded (error)
+  ((count :initarg :count :reader tree-node-limit-count)
+   (limit :initarg :limit :reader tree-node-limit-limit))
+  (:report (lambda (condition stream)
+             (format stream "Tree node count ~D exceeds maximum ~D"
+                     (tree-node-limit-count condition)
+                     (tree-node-limit-limit condition)))))
+
+(define-condition tree-child-list-invalid (error)
+  ((kind :initarg :kind :reader tree-child-list-invalid-kind))
+  (:report (lambda (condition stream)
+             (format stream "Tree child list is ~A"
+                     (ecase (tree-child-list-invalid-kind condition)
+                       (:circular "circular")
+                       (:improper "improper"))))))
+
+(defun %check-tree-depth-limit (depth)
+  (when (> depth *maximum-tree-depth*)
+    (error 'tree-depth-limit-exceeded
+           :depth depth
+           :limit *maximum-tree-depth*)))
+
+(defun %make-tree-resource-state ()
+  (list 0))
+
+(defun %check-tree-node-limit (state)
+  (let ((count (incf (car state))))
+    (when (> count *maximum-tree-nodes*)
+      (error 'tree-node-limit-exceeded
+             :count count
+             :limit *maximum-tree-nodes*))))
+
+(defun %tree-children-list (children)
+  (loop with seen = (make-hash-table :test 'eq)
+        with tail = children
+        with items = '()
+        while tail
+        do (cond
+             ((consp tail)
+              (when (gethash tail seen)
+                (error 'tree-child-list-invalid :kind :circular))
+              (setf (gethash tail seen) t)
+              (push (car tail) items)
+              (setf tail (cdr tail)))
+             (t
+              (error 'tree-child-list-invalid :kind :improper)))
+        finally (return (nreverse items))))
+
+(defun %validate-tree-child-list (children)
+  (loop with seen = (make-hash-table :test 'eq)
+        for tail = children then (cdr tail)
+        while tail
+        do (cond
+             ((consp tail)
+              (when (gethash tail seen)
+                (error 'tree-child-list-invalid :kind :circular))
+              (setf (gethash tail seen) t))
+             (t
+              (error 'tree-child-list-invalid :kind :improper)))))
+
+(defmacro %do-tree-children ((child children &optional result) &body body)
+  (let ((tail (gensym "TAIL"))
+        (seen (gensym "SEEN")))
+    `(loop with ,seen = (make-hash-table :test 'eq)
+           for ,tail = ,children then (cdr ,tail)
+           while ,tail
+           do (cond
+                ((consp ,tail)
+                 (when (gethash ,tail ,seen)
+                   (error 'tree-child-list-invalid :kind :circular))
+                 (setf (gethash ,tail ,seen) t)
+                 (let ((,child (car ,tail)))
+                   ,@body))
+                (t
+                 (error 'tree-child-list-invalid :kind :improper)))
+           finally (return ,result))))
+
+(defun %tree-node-children (node children-fn)
+  (%tree-children-list (funcall children-fn node)))
+
 (defun %span->plist (span)
   (when span
     (list :source (span-source span)
@@ -12,29 +108,36 @@
 
 (defun %tree-node->sexp (node type-fn value-fn children-fn span-fn data-fn
                          &key include-span include-data)
-  (labels ((serialize (current)
-             (append (list :type (funcall type-fn current)
-                           :value (funcall value-fn current)
-                           :children (mapcar #'serialize
-                                             (funcall children-fn current)))
-                     (when include-span
-                       (list :span (%span->plist (funcall span-fn current))))
-                     (when include-data
-                       (list :data (funcall data-fn current))))))
-    (serialize node)))
+  (let ((state (%make-tree-resource-state)))
+    (labels ((serialize (current depth)
+               (%check-tree-depth-limit depth)
+               (%check-tree-node-limit state)
+               (append (list :type (funcall type-fn current)
+                             :value (funcall value-fn current)
+                             :children (mapcar (lambda (child)
+                                                  (serialize child (1+ depth)))
+                                                (%tree-node-children current children-fn)))
+                       (when include-span
+                         (list :span (%span->plist (funcall span-fn current))))
+                       (when include-data
+                         (list :data (funcall data-fn current))))))
+      (serialize node 1))))
 
-(defun %tree-walk (node function children-fn &optional (order :pre))
+(defun %tree-walk (node function children-fn &optional (order :pre) (depth 1)
+                                                (state (%make-tree-resource-state)))
   "Visit NODE and every descendant, calling FUNCTION on each for its side effects;
 return NODE. ORDER is :PRE (NODE before its children, the default) or :POST
 (children before NODE)."
+  (%check-tree-depth-limit depth)
+  (%check-tree-node-limit state)
   (ecase order
     (:pre
      (funcall function node)
-     (dolist (child (funcall children-fn node))
-       (%tree-walk child function children-fn :pre)))
+     (%do-tree-children (child (funcall children-fn node))
+       (%tree-walk child function children-fn :pre (1+ depth) state)))
     (:post
-     (dolist (child (funcall children-fn node))
-       (%tree-walk child function children-fn :post))
+     (%do-tree-children (child (funcall children-fn node))
+       (%tree-walk child function children-fn :post (1+ depth) state))
      (funcall function node)))
   node)
 
@@ -56,33 +159,55 @@ INITIAL-VALUE: each visited node updates the accumulator to
 (with TEST), and the same number of children compared pairwise. Span and data are
 ignored unless INCLUDE-SPAN / INCLUDE-DATA request them (spans compare by their
 START/END offsets, data with TEST)."
-  (labels ((span-equal (a b)
-             (or (eq a b)
-                 (and a b
-                      (eql (span-start a) (span-start b))
-                      (eql (span-end a) (span-end b)))))
-           (node-equal (a b)
-             (and (eql (funcall type-fn a) (funcall type-fn b))
-                  (funcall test (funcall value-fn a) (funcall value-fn b))
-                  (or (not include-span)
-                      (span-equal (funcall span-fn a) (funcall span-fn b)))
-                  (or (not include-data)
-                      (funcall test (funcall data-fn a) (funcall data-fn b)))
-                  (let ((left-children (funcall children-fn a))
-                        (right-children (funcall children-fn b)))
-                    (and (= (length left-children) (length right-children))
-                         (every #'node-equal left-children right-children))))))
-    (node-equal left right)))
+  (let ((state (%make-tree-resource-state)))
+    (labels ((span-equal (a b)
+               (or (eq a b)
+                   (and a b
+                        (eql (span-start a) (span-start b))
+                        (eql (span-end a) (span-end b)))))
+             (node-equal (a b depth)
+               (%check-tree-depth-limit depth)
+               (%check-tree-node-limit state)
+               (and (eql (funcall type-fn a) (funcall type-fn b))
+                    (funcall test (funcall value-fn a) (funcall value-fn b))
+                    (or (not include-span)
+                        (span-equal (funcall span-fn a) (funcall span-fn b)))
+                    (or (not include-data)
+                        (funcall test (funcall data-fn a) (funcall data-fn b)))
+                    (let ((left-children (funcall children-fn a))
+                          (right-children (funcall children-fn b)))
+                      (%validate-tree-child-list left-children)
+                      (%validate-tree-child-list right-children)
+                      (loop with left-tail = left-children
+                            with right-tail = right-children
+                            do (cond
+                                 ((and (null left-tail) (null right-tail))
+                                  (return t))
+                                 ((or (null left-tail) (null right-tail))
+                                  (return nil))
+                                 ((not (node-equal (car left-tail)
+                                                   (car right-tail)
+                                                   (1+ depth)))
+                                  (return nil))
+                                 (t
+                                  (setf left-tail (cdr left-tail)
+                                        right-tail (cdr right-tail)))))))))
+      (node-equal left right 1))))
 
-(defun %tree-find (node predicate children-fn)
+(defun %tree-find (node predicate children-fn &optional (depth 1)
+                                                (state (%make-tree-resource-state)))
   "Return the first node (pre-order, NODE first) for which PREDICATE is true, or
 NIL when no node matches."
+  (%check-tree-depth-limit depth)
+  (%check-tree-node-limit state)
   (if (funcall predicate node)
       node
-      (dolist (child (funcall children-fn node) nil)
-        (let ((found (%tree-find child predicate children-fn)))
-          (when found
-            (return found))))))
+      (let ((children (funcall children-fn node)))
+        (%validate-tree-child-list children)
+        (dolist (child children nil)
+          (let ((found (%tree-find child predicate children-fn (1+ depth) state)))
+            (when found
+              (return found)))))))
 
 (defun %tree-collect (node predicate children-fn)
   "Return, in pre-order, the list of every node satisfying PREDICATE."
@@ -106,20 +231,32 @@ NIL when no node matches."
 
 (defun %tree-depth (node children-fn)
   "Return the maximum depth of the tree rooted at NODE (a leaf has depth 1)."
-  (let ((children (funcall children-fn node)))
-    (if (null children)
-        1
-        (1+ (reduce #'max children
-                    :key (lambda (child) (%tree-depth child children-fn)))))))
+  (let ((state (%make-tree-resource-state)))
+    (labels ((measure (current depth)
+               (%check-tree-depth-limit depth)
+               (%check-tree-node-limit state)
+               (let ((maximum-child-depth 0))
+                 (%do-tree-children (child (funcall children-fn current))
+                   (setf maximum-child-depth
+                         (max maximum-child-depth
+                              (measure child (1+ depth)))))
+                 (if (zerop maximum-child-depth)
+                     1
+                     (1+ maximum-child-depth)))))
+      (measure node 1))))
 
-(defun %tree-map (node function children-fn rebuild-fn)
+(defun %tree-map (node function children-fn rebuild-fn &optional (depth 1)
+                                                       (state (%make-tree-resource-state)))
   "Rebuild the tree bottom-up: map each child first, then call FUNCTION on a copy
 of the node whose children are the mapped children, returning FUNCTION's result.
 REBUILD-FN takes (node mapped-children) and returns a node copy with those
 children."
+  (%check-tree-depth-limit depth)
+  (%check-tree-node-limit state)
   (let ((mapped-children (mapcar (lambda (child)
-                                   (%tree-map child function children-fn rebuild-fn))
-                                 (funcall children-fn node))))
+                                   (%tree-map child function children-fn rebuild-fn
+                                              (1+ depth) state))
+                                 (%tree-node-children node children-fn))))
     (funcall function (funcall rebuild-fn node mapped-children))))
 
 (defun %tree->string (node type-fn value-fn children-fn &optional (indent 0))
@@ -127,21 +264,24 @@ children."
 line: TYPE, followed by VALUE (via ~S, so strings and keywords print readably)
 when the value is non-NIL, with each level indented two spaces further. INDENT is
 the starting depth. No trailing newline is emitted."
-  (with-output-to-string (out)
-    (labels ((emit (current depth)
-               (dotimes (level depth)
-                 (declare (ignorable level))
-                 (write-string "  " out))
-               (let ((value (funcall value-fn current)))
-                 ;; ~S (not ~A) so a keyword type keeps its colon and a string
-                 ;; value keeps its quotes -- the render stays readable/faithful.
-                 (if value
-                     (format out "~S ~S" (funcall type-fn current) value)
-                     (format out "~S" (funcall type-fn current))))
-               (dolist (child (funcall children-fn current))
-                 (terpri out)
-                 (emit child (1+ depth)))))
-      (emit node indent))))
+  (let ((state (%make-tree-resource-state)))
+    (with-output-to-string (out)
+      (labels ((emit (current indent-level depth)
+                 (%check-tree-depth-limit depth)
+                 (%check-tree-node-limit state)
+                 (dotimes (level indent-level)
+                   (declare (ignorable level))
+                   (write-string "  " out))
+                 (let ((value (funcall value-fn current)))
+                   ;; ~S (not ~A) so a keyword type keeps its colon and a string
+                   ;; value keeps its quotes -- the render stays readable/faithful.
+                   (if value
+                       (format out "~S ~S" (funcall type-fn current) value)
+                       (format out "~S" (funcall type-fn current))))
+                 (%do-tree-children (child (funcall children-fn current))
+                   (terpri out)
+                   (emit child (1+ indent-level) (1+ depth)))))
+        (emit node indent 1)))))
 
 (defun %dot-escape (string)
   "Escape STRING for use inside a Graphviz DOT double-quoted label."
@@ -158,7 +298,8 @@ the starting depth. No trailing newline is emitted."
 Each node becomes `nN [label=\"TYPE VALUE\"]` (VALUE included when non-NIL, escaped
 for DOT) and each parent/child link an `nN -> nM` edge. Node ids are assigned in
 pre-order; the result is a complete `digraph { ... }` document."
-  (let ((counter -1))
+  (let ((counter -1)
+        (state (%make-tree-resource-state)))
     (with-output-to-string (out)
       (format out "digraph ~A {~%" graph-name)
       (labels ((label-of (current)
@@ -166,14 +307,16 @@ pre-order; the result is a complete `digraph { ... }` document."
                    (if value
                        (format nil "~S ~S" (funcall type-fn current) value)
                        (format nil "~S" (funcall type-fn current)))))
-               (emit (current)
+               (emit (current depth)
+                 (%check-tree-depth-limit depth)
+                 (%check-tree-node-limit state)
                  (let ((id (incf counter)))
                    (format out "  n~D [label=\"~A\"];~%" id (%dot-escape (label-of current)))
-                   (dolist (child (funcall children-fn current))
-                     (let ((child-id (emit child)))
+                   (%do-tree-children (child (funcall children-fn current))
+                     (let ((child-id (emit child (1+ depth))))
                        (format out "  n~D -> n~D;~%" id child-id)))
                    id)))
-        (emit node))
+        (emit node 1))
       (format out "}~%"))))
 
 (defun %plist->span (plist)
@@ -192,15 +335,20 @@ line/column 1."
                  :end-line (or end-line 1)
                  :end-column (or end-column 1)))))
 
-(defun %sexp->tree (sexp constructor)
+(defun %sexp->tree (sexp constructor &optional (depth 1)
+                                      (state (%make-tree-resource-state)))
   "Rebuild a tree node from the plist SEXP (as produced by ->SEXP), recursing into
 :CHILDREN and reconstructing an embedded :SPAN. CONSTRUCTOR is MAKE-AST-NODE /
 MAKE-CST-NODE (a &key TYPE VALUE CHILDREN SPAN DATA function)."
+  (%check-tree-depth-limit depth)
+  (%check-tree-node-limit state)
   (destructuring-bind (&key type value children span data) sexp
     (funcall constructor
              :type type
              :value value
-             :children (mapcar (lambda (child) (%sexp->tree child constructor)) children)
+             :children (mapcar (lambda (child)
+                                  (%sexp->tree child constructor (1+ depth) state))
+                                (%tree-children-list children))
              :span (%plist->span span)
              :data data)))
 

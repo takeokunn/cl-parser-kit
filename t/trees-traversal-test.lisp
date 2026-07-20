@@ -7,6 +7,28 @@
                    (make-ast-node :type :branch :value :mid
                                   :children (list (make-ast-node :type :leaf :value 2))))))
 
+(defun %deep-ast (depth)
+  (loop repeat (1- depth)
+        with node = (make-ast-node :type :leaf)
+        do (setf node (make-ast-node :type :branch :children (list node)))
+        finally (return node)))
+
+(defun %wide-ast (child-count)
+  (make-ast-node :type :root
+                 :children (loop repeat child-count
+                                 collect (make-ast-node :type :leaf))))
+
+(defun %cyclic-child-ast ()
+  (let* ((child (make-ast-node :type :leaf))
+         (children (list child))
+         (root (make-ast-node :type :root :children children)))
+    (setf (cdr children) children)
+    root))
+
+(defun %improper-child-ast ()
+  (make-ast-node :type :root
+                 :children (cons (make-ast-node :type :leaf) :not-a-list)))
+
 (it-sequential "ast-node-walk-visits-preorder-test"
   (let ((types '()))
     (let ((returned (ast-node-walk (%sample-ast)
@@ -56,6 +78,87 @@
 (it-sequential "ast-node-depth-measures-deepest-path-test"
   (expect (ast-node-depth (%sample-ast)) :to-equal 3)
   (expect (ast-node-depth (make-ast-node :type :lone :value 0)) :to-equal 1))
+
+(it-sequential "tree-helpers-enforce-depth-limit-test"
+  (let ((*maximum-tree-depth* 3)
+        (deep (%deep-ast 4)))
+    (expect (lambda () (ast-node-depth deep)) :to-throw 'tree-depth-limit-exceeded)
+    (expect (lambda () (ast-node-walk deep (lambda (node) (declare (ignore node)))))
+            :to-throw 'tree-depth-limit-exceeded)
+    (expect (lambda () (ast-node->sexp deep)) :to-throw 'tree-depth-limit-exceeded)
+    (expect (lambda () (ast-node->string deep)) :to-throw 'tree-depth-limit-exceeded)
+    (expect (lambda () (ast-node->dot deep)) :to-throw 'tree-depth-limit-exceeded)
+    (expect (lambda () (ast-node-map deep #'identity))
+            :to-throw 'tree-depth-limit-exceeded)
+    (expect (lambda () (ast-node-equal deep deep))
+            :to-throw 'tree-depth-limit-exceeded)
+    (expect (lambda () (sexp->ast-node '(:type :a :children
+                                         ((:type :b :children
+                                           ((:type :c :children
+                                             ((:type :d)))))))))
+            :to-throw 'tree-depth-limit-exceeded)))
+
+(it-sequential "tree-helpers-enforce-node-limit-test"
+  (let ((*maximum-tree-nodes* 3)
+        (tree (%wide-ast 3))
+        (sexp '(:type :root :value nil :children
+                ((:type :leaf :value nil :children ())
+                 (:type :leaf :value nil :children ())
+                 (:type :leaf :value nil :children ())))))
+    (dolist (thunk (list (lambda () (ast-node-count tree))
+                         (lambda () (ast-node-walk tree
+                                                   (lambda (node)
+                                                     (declare (ignore node)))))
+                         (lambda () (ast-node->sexp tree))
+                         (lambda () (ast-node->string tree))
+                         (lambda () (ast-node->dot tree))
+                         (lambda () (ast-node-map tree #'identity))
+                         (lambda () (ast-node-equal tree tree))))
+      (expect thunk :to-throw 'tree-node-limit-exceeded))
+    (expect (lambda () (sexp->ast-node sexp))
+            :to-throw 'tree-node-limit-exceeded)))
+
+(it-sequential "tree-helpers-reject-circular-child-list-test"
+  (let ((tree (%cyclic-child-ast)))
+    (dolist (thunk (list (lambda () (ast-node-count tree))
+                         (lambda () (ast-node-walk tree
+                                                   (lambda (node)
+                                                     (declare (ignore node)))))
+                         (lambda () (ast-node-find tree
+                                                   (lambda (node)
+                                                     (declare (ignore node))
+                                                     nil)))
+                         (lambda () (ast-node-depth tree))
+                         (lambda () (ast-node->sexp tree))
+                         (lambda () (ast-node->string tree))
+                         (lambda () (ast-node->dot tree))
+                         (lambda () (ast-node-map tree #'identity))
+                         (lambda () (ast-node-equal tree tree))))
+      (expect thunk :to-throw 'tree-child-list-invalid))))
+
+(it-sequential "tree-helpers-reject-improper-child-list-test"
+  (let ((tree (%improper-child-ast)))
+    (dolist (thunk (list (lambda () (ast-node-count tree))
+                         (lambda () (ast-node-walk tree
+                                                   (lambda (node)
+                                                     (declare (ignore node)))))
+                         (lambda () (ast-node-find tree
+                                                   (lambda (node)
+                                                     (declare (ignore node))
+                                                     nil)))
+                         (lambda () (ast-node-depth tree))
+                         (lambda () (ast-node->sexp tree))
+                         (lambda () (ast-node->string tree))
+                         (lambda () (ast-node->dot tree))
+                         (lambda () (ast-node-map tree #'identity))
+                         (lambda () (ast-node-equal tree tree))))
+      (expect thunk :to-throw 'tree-child-list-invalid))))
+
+(it-sequential "sexp->ast-node-rejects-circular-children-list-test"
+  (let ((children (list '(:type :leaf))))
+    (setf (cdr children) children)
+    (expect (lambda () (sexp->ast-node (list :type :root :children children)))
+            :to-throw 'tree-child-list-invalid)))
 
 (it-sequential "ast-node-walk-visits-postorder-test"
   (let ((types '()))

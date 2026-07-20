@@ -251,6 +251,16 @@
    #:parse-pratt-all
    #:parse-pratt-source
    ;; trees
+   #:*maximum-tree-depth*
+   #:*maximum-tree-nodes*
+   #:tree-depth-limit-exceeded
+   #:tree-depth-limit-depth
+   #:tree-depth-limit-limit
+   #:tree-node-limit-exceeded
+   #:tree-node-limit-count
+   #:tree-node-limit-limit
+   #:tree-child-list-invalid
+   #:tree-child-list-invalid-kind
    #:ast-node
    #:make-ast-node
    #:ast-node-type
