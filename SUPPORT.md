@@ -65,7 +65,7 @@ available through:
 
 ## Release Readiness
 
-This project does not yet ship formal versioned releases.
+This project ships tagged releases starting with `v0.1.0`.
 
 Before treating a checkout as a release candidate:
 

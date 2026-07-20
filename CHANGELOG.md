@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.1.0 - 2026-07-20
+
 - added predicate token-run scanners: `take-while` / `take-while1` match a run of
   consecutive tokens satisfying a predicate (returning the list; `take-while1`
   requires at least one), and `skip-while` skips such a run discarding it —
