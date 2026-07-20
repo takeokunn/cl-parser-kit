@@ -18,6 +18,22 @@
 (defun span-empty-p (span)
   (zerop (span-length span)))
 
+(defun span-contains-position-p (span position)
+  "True when the character offset POSITION lies within SPAN, treating the span as
+the half-open interval [start, end). An empty span contains no position."
+  (and (<= (span-start span) position)
+       (< position (span-end span))))
+
+(defun span-text (span &optional (source (span-source span)))
+  "Return the substring of SOURCE that SPAN covers, or NIL when no string SOURCE
+is available. SOURCE defaults to the span's own SPAN-SOURCE, so a span produced
+from source text can recover its slice directly; offsets are clamped to SOURCE."
+  (when (stringp source)
+    (let* ((length (length source))
+           (start (max 0 (min (span-start span) length)))
+           (end (max start (min (span-end span) length))))
+      (subseq source start end))))
+
 (defun span-merge (left right)
   ;; Choose start-line/column and end-line/column from whichever argument
   ;; actually has the smaller START / larger END offset, instead of trusting

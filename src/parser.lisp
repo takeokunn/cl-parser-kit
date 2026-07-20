@@ -18,6 +18,9 @@
   (let ((stream (ensure-vector tokens)))
     (multiple-value-bind (ok value next failure)
         (run-parser parser stream 0)
+      ;; Terminal entry points deliberately surface only hard failures: a
+      ;; recovered success drops its collected diagnostics here (read them via
+      ;; RUN-PARSER instead). See combinators-recover.lisp.
       (if ok
           (values t value next nil)
           (values nil nil next failure)))))

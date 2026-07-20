@@ -69,6 +69,78 @@
       (expect (parse-failure-expected failure) :to-equal "binding name")
       (expect (parse-failure-actual failure) :to-equal :eof))))
 
+(it-sequential "combinator-verify-accepts-value-satisfying-predicate-test"
+  (let ((tokens (vector (make-token :type :number :text "8" :value 8)))
+        (parser (verify (type-token-value :number) #'evenp :expected-name :even)))
+    (assert-combinator-success (parse-tokens parser tokens)
+        (value next failure)
+      (expect next :to-equal 1)
+      (expect value :to-equal 8))))
+
+(it-sequential "combinator-verify-rejects-value-failing-predicate-test"
+  (let ((tokens (vector (make-token :type :number :text "7" :value 7)))
+        (parser (verify (type-token-value :number) #'evenp :expected-name :even)))
+    (assert-combinator-failure (parse-tokens parser tokens)
+        (value next failure)
+      ;; fails at the original position, non-committed, with the value as actual
+      (expect (parse-failure-position failure) :to-equal 0)
+      (expect (parse-failure-committed-p failure) :to-be-falsy)
+      (expect (parse-failure-expected failure) :to-equal :even)
+      (expect (parse-failure-actual failure) :to-equal 7))))
+
+(it-sequential "combinator-commit-turns-soft-failure-into-hard-test"
+  ;; Without COMMIT, OPT recovers from a non-consuming failure. With COMMIT the
+  ;; failure is committed, so OPT propagates it.
+  (with-combinator-tokens (tokens '((:type :comma :text ",")))
+    (let ((soft (opt (type-token :identifier)))
+          (hard (opt (commit (type-token :identifier)))))
+      (assert-combinator-success (parse-tokens soft tokens)
+          (value next failure)
+        (expect value :to-be-falsy))
+      (assert-combinator-failure (parse-tokens hard tokens)
+          (value next failure)
+        (expect (parse-failure-committed-p failure) :to-be-truthy)
+        (expect (parse-failure-expected failure) :to-equal :identifier)))))
+
+(it-sequential "combinator-current-position-yields-index-without-consuming-test"
+  (with-combinator-tokens (tokens *identifier-plus-number-token-specs*)
+    (let ((parser (seq (type-token :identifier) (current-position))))
+      (assert-combinator-success (parse-tokens parser tokens)
+          (value next failure)
+        (expect next :to-equal 1)
+        ;; seq value is (identifier-token 1): current-position reported index 1
+        (expect (second value) :to-equal 1)))))
+
+(it-sequential "combinator-context-passes-success-through-test"
+  (with-combinator-tokens (tokens *identifier-only-token-specs*)
+    (let ((parser (context (type-token :identifier) "while parsing a name")))
+      (assert-combinator-success (parse-tokens parser tokens)
+          (value next failure)
+        (expect next :to-equal 1)
+        (expect (token-type value) :to-equal :identifier)))))
+
+(it-sequential "combinator-context-adds-note-on-failure-test"
+  (let ((parser (context (type-token :identifier) "while parsing a name")))
+    (assert-combinator-failure (parse-tokens parser #())
+        (value next failure)
+      ;; expected/actual are untouched; only a note is appended
+      (expect (parse-failure-expected failure) :to-equal :identifier)
+      (expect (parse-failure-actual failure) :to-equal :eof)
+      (let ((note (first (parse-failure-diagnostics failure))))
+        (expect (diagnostic-kind note) :to-equal :note)
+        (expect (diagnostic-message note) :to-equal "while parsing a name")))))
+
+(it-sequential "combinator-context-preserves-committed-failure-test"
+  (let* ((tokens (vector (make-token :type :plus :text "+")))
+         (parser (context (seq (type-token :plus) (type-token :number))
+                          "while parsing a sum")))
+    (assert-combinator-failure (parse-tokens parser tokens)
+        (value next failure)
+      (expect (parse-failure-committed-p failure) :to-be-truthy)
+      (expect (parse-failure-expected failure) :to-equal :number)
+      (expect (diagnostic-message (first (last (parse-failure-diagnostics failure))))
+              :to-equal "while parsing a sum"))))
+
 (it-sequential "combinator-alt-propagates-farthest-failure-test"
   (let* ((tokens (vector (make-token :type :identifier :text "lhs")
                          (make-token :type :identifier :text "rhs")))
@@ -175,6 +247,24 @@ foo")
         (expect (search "Unexpected token" rendered) :to-be-truthy)
         (expect (search "2:1-2:4" rendered) :to-be-truthy)
         (expect (search "  | foo" rendered) :to-be-truthy)))))
+
+(it-sequential "combinator-not-empty-passes-consuming-success-test"
+  (with-combinator-tokens (tokens '((:type :identifier :text "a")))
+    (let ((parser (not-empty (type-token :identifier))))
+      (assert-combinator-success (parse-tokens parser tokens)
+          (value next failure)
+        (expect next :to-equal 1)
+        (expect (token-type value) :to-equal :identifier)))))
+
+(it-sequential "combinator-not-empty-fails-on-non-consuming-success-test"
+  ;; (opt ...) succeeds consuming nothing at a non-matching token; NOT-EMPTY
+  ;; turns that into a failure so a repetition cannot spin in place.
+  (with-combinator-tokens (tokens '((:type :number :text "1")))
+    (let ((parser (not-empty (opt (type-token :identifier)))))
+      (assert-combinator-failure (parse-tokens parser tokens)
+          (value next failure)
+        (expect next :to-equal 0)
+        (expect (parse-failure-expected failure) :to-equal :not-empty)))))
 
 (it-sequential "combinator-end-of-input-test"
   (let ((parser (seq (type-token :identifier)

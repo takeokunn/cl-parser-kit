@@ -41,6 +41,34 @@
 (defun make-diagnostic (&key (kind :error) message span notes fixes data)
   (%make-diagnostic kind message span notes fixes data))
 
+(defun apply-fix-it (source fix-it)
+  "Return SOURCE with the region covered by FIX-IT's span replaced by its
+replacement string (a NIL replacement deletes the region). Span offsets are
+clamped to SOURCE, so an out-of-range fix cannot error. The single-fix form of
+APPLY-FIXES -- turning a fix-it (structured suggestion data) into corrected text."
+  (let* ((span (fix-it-span fix-it))
+         (length (length source))
+         (start (max 0 (min (span-start span) length)))
+         (end (max start (min (span-end span) length))))
+    (concatenate 'string
+                 (subseq source 0 start)
+                 (or (fix-it-replacement fix-it) "")
+                 (subseq source end))))
+
+(defun apply-fixes (source fixes)
+  "Return SOURCE with every fix-it in FIXES applied. Fixes are applied from the
+last source position to the first, so each edit leaves the offsets of the
+not-yet-applied (earlier) fixes valid; NIL entries are ignored and order among
+fixes sharing a start position is preserved. Pair it with DIAGNOSTIC-FIXES to
+auto-apply a diagnostic's suggestions:
+  (apply-fixes source (diagnostic-fixes diagnostic))."
+  (let ((ordered (stable-sort (copy-list (remove nil fixes))
+                              #'>
+                              :key (lambda (fix) (span-start (fix-it-span fix))))))
+    (reduce (lambda (current fix) (apply-fix-it current fix))
+            ordered
+            :initial-value source)))
+
 (defun make-parse-failure (&key position expected actual diagnostics committed-p)
   (%make-parse-failure position expected actual diagnostics committed-p))
 

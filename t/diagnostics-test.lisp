@@ -57,6 +57,56 @@
      (parse-failure->string failure)
      '("one of IDENTIFIER, NUMBER, STRING" "got PLUS"))))
 
+(it-sequential "parse-failure-diagnostics-synthesizes-default-test"
+  ;; A failure with no attached diagnostics yields one synthesized error
+  ;; diagnostic carrying the failure's data.
+  (let* ((failure (make-parse-failure :position 0 :expected :identifier :actual :plus))
+         (diagnostics (parse-failure->diagnostics failure)))
+    (expect (length diagnostics) :to-equal 1)
+    (expect (diagnostic-kind (first diagnostics)) :to-equal :error)
+    (expect (search "Expected IDENTIFIER" (diagnostic-message (first diagnostics)))
+            :to-be-truthy)))
+
+(it-sequential "parse-failure-diagnostics-returns-attached-diagnostics-test"
+  ;; When the failure already carries diagnostics, those are returned verbatim.
+  (let* ((note (error-diagnostic "custom problem"))
+         (failure (make-parse-failure :position 0 :expected :identifier :actual :plus
+                                      :diagnostics (list note)))
+         (diagnostics (parse-failure->diagnostics failure)))
+    (expect diagnostics :to-equal (list note))))
+
+(it-sequential "apply-fix-it-replaces-span-region-test"
+  ;; Replace "teh" (offsets 4..7) with "the".
+  (let ((fix (make-fix-it :span (make-span :start 4 :end 7) :replacement "the")))
+    (expect (apply-fix-it "fix teh bug" fix) :to-equal "fix the bug")))
+
+(it-sequential "apply-fix-it-nil-replacement-deletes-region-test"
+  ;; Delete the two spaces at offsets 3..5 in "abc  def" -> "abcdef".
+  (let ((fix (make-fix-it :span (make-span :start 3 :end 5) :replacement nil)))
+    (expect (apply-fix-it "abc  def" fix) :to-equal "abcdef")))
+
+(it-sequential "apply-fixes-applies-multiple-back-to-front-test"
+  ;; Two edits whose earlier one would shift the later's offsets if applied
+  ;; front-to-back; APPLY-FIXES orders them so both land correctly.
+  (let ((fixes (list (make-fix-it :span (make-span :start 0 :end 1) :replacement "X")
+                     (make-fix-it :span (make-span :start 4 :end 5) :replacement "Y"))))
+    (expect (apply-fixes "a b c" fixes) :to-equal "X b Y")))
+
+(it-sequential "apply-fixes-uses-diagnostic-fixes-test"
+  (let* ((diagnostic (error-diagnostic "typo"
+                                       :fixes (list (make-fix-it
+                                                     :span (make-span :start 0 :end 2)
+                                                     :replacement "hi"))))
+         (fixed (apply-fixes "yo there" (diagnostic-fixes diagnostic))))
+    (expect fixed :to-equal "hi there")))
+
+(it-sequential "diagnostics-string-renders-list-test"
+  (let* ((first-diagnostic (error-diagnostic "first problem"))
+         (second-diagnostic (warning-diagnostic "second problem"))
+         (rendered (diagnostics->string (list first-diagnostic nil second-diagnostic))))
+    (expect (search "first problem" rendered) :to-be-truthy)
+    (expect (search "second problem" rendered) :to-be-truthy)))
+
 (it-sequential "parse-failure-string-renders-token-and-string-expectations-test"
   ;; A type-less token falls back to its printed text, and a raw string
   ;; expectation passes through unchanged.

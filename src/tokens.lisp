@@ -57,6 +57,19 @@
             (%make-offset-span start end :source source)))
       (%make-offset-span position position)))
 
+(defun filter-tokens (tokens predicate)
+  "Return a fresh vector of the TOKENS satisfying PREDICATE, in order.
+
+Useful for pruning a token stream before parsing -- e.g. dropping non-skipped
+comment or whitespace tokens the tokenizer emitted:
+  (filter-tokens toks (lambda (token) (not (eql (token-type token) :comment)))).
+TOKENS may be any sequence; the result is always a vector, matching TOKENIZE."
+  (let ((stream (ensure-vector tokens)))
+    (coerce (loop for token across stream
+                  when (funcall predicate token)
+                  collect token)
+            'vector)))
+
 (defun make-token (&key type text value metadata span start end)
   (let ((token (%make-token :type type
                             :text text

@@ -1,5 +1,26 @@
 (in-package :cl-parser-kit/test)
 
+(it-sequential "parse-failure-span-returns-actual-token-span-test"
+  ;; A failure whose actual is a token exposes that token's span for rendering.
+  (let* ((tokens (vector (make-token :type :number :text "1" :value 1 :start 0 :end 1)))
+         (parser (type-token :identifier)))
+    (multiple-value-bind (ok value next failure)
+        (parse-tokens parser tokens)
+      (declare (ignore ok value next))
+      (let ((span (parse-failure-span failure)))
+        (expect (typep span 'span) :to-be-truthy)
+        (expect (span-start span) :to-equal 0)
+        (expect (span-end span) :to-equal 1)))))
+
+(it-sequential "parse-failure-span-is-nil-at-end-of-input-test"
+  ;; At EOF the actual is :EOF, not a token, so there is no span.
+  (let ((parser (type-token :identifier)))
+    (multiple-value-bind (ok value next failure)
+        (parse-tokens parser #())
+      (declare (ignore ok value next))
+      (expect (parse-failure-actual failure) :to-equal :eof)
+      (expect (parse-failure-span failure) :to-be-falsy))))
+
 (it-sequential "parse-all-trailing-token-test"
   (with-parser-tokens ("answer + 1" *identifier-plus-number-rule-specs*)
       (tokenizer tokens)
