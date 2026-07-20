@@ -717,6 +717,13 @@ The exported surface is grouped by concern:
 - failure shaping: `label`
 - practical seq helpers: `sep-by`, `sep-by1`, `sep-end-by`, `sep-end-by1`, `preceded-by`, `terminated-by`, `between`, `delimited-sep-by`, `delimited-sep-by1`, `delimited-sep-end-by`, `delimited-sep-end-by1`, `chainl1`, `chainr1`, `operator-parser`
 - token projection helpers: `type-token-text`, `type-token-value`, `literal-text`, `literal-value`
+- extended combinators: `choice`, `option`, `fail-parser`, `as-value`, `pure`, `times`, `times-between`, `at-least`, `at-most`, `end-by`, `end-by1`, `skip-many`, `skip-many1`, `fold-many`, `many-till`, `chainl`, `chainr`, `seq-map`, `pick`, `spanning`, `recognize`, `surrounded-by`
+- token matching: `any-token`, `token-type-in`, `token-text-in`, `satisfies-value`
+- value constraints and cut: `verify`, `commit`, `current-position`
+- failure context: `context` (append an explanatory note to a failure)
+- error recovery: `skip-until`, `recover` (panic-mode resynchronisation for multi-error parsing)
+- tree traversal: `ast-node-walk`, `ast-node-find`, `ast-node-map`, `ast-node-collect`, `ast-node-count`, `ast-node-depth` (and the `cst-node-*` equivalents)
+- ergonomic macros: `parse-let*` (do-notation), `parser-lazy` and `defparser` (forward references and recursive grammars)
 - `alt` returns the farthest branch failure, and merges expected forms
   only when branches fail at the same position
 - `lookahead` never consumes input on success, but preserves the nested farthest
@@ -732,6 +739,7 @@ The exported surface is grouped by concern:
 - direct token-stream usage is covered in [`examples/token-stream-example.lisp`](./examples/token-stream-example.lisp)
 - external-token fallback diagnostics are covered in [`examples/external-token-diagnostic-example.lisp`](./examples/external-token-diagnostic-example.lisp)
 - Pratt parsing: `make-pratt-table`, `register-*operator`, `parse-pratt`, `parse-pratt-all`, `parse-pratt-source`
+- Pratt high-level registrars: `register-atom`, `register-prefix`, `register-infix-left`, `register-infix-right`, `register-postfix`, `register-grouping`
 - tree helpers: `make-ast-node`, `make-cst-node`, `ast-node->sexp`, `cst-node->sexp`
 - test execution: `asdf:test-system "cl-parser-kit-test"` or `sbcl --script scripts/run-tests.lisp`
 

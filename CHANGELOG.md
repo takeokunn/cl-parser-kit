@@ -2,6 +2,151 @@
 
 ## Unreleased
 
+- added predicate token-run scanners: `take-while` / `take-while1` match a run of
+  consecutive tokens satisfying a predicate (returning the list; `take-while1`
+  requires at least one), and `skip-while` skips such a run discarding it —
+  Megaparsec's `takeWhileP` / `takeWhile1P` over a token stream
+- added a CSV parser example (`examples/csv-parser-example.lisp`), a
+  line-oriented counterpoint keeping the newline as a real token: rows via
+  `sep-end-by`, fields via `sep-by1`, and quoted fields that may contain commas
+- added an error-recovery example (`examples/error-recovery-example.lisp`)
+  demonstrating panic-mode recovery with `recover` + `skip-until` driven by
+  `many-till`, so one parse reports every malformed statement (and collects the
+  recovery diagnostics, read from `run-parser`'s fourth value) instead of
+  aborting at the first error
+- added a complete recursive JSON parser example
+  (`examples/json-parser-example.lisp`), an end-to-end demonstration of the
+  tokenizer (escaped strings, signed/exponent numbers, keyword and literal
+  rules), a self-referential grammar via `defparser`, and the
+  sequence/choice/separator combinators, decoding objects to alists and arrays
+  to lists
+- completed the fix-it feature with applicators (previously fix-its were
+  suggestion data with no way to apply them):
+  - `apply-fix-it` — return source with one fix-it's span region replaced by its
+    replacement (a `nil` replacement deletes it); offsets are clamped to source
+  - `apply-fixes` — apply a list of fix-its last-to-first, so each edit leaves
+    the not-yet-applied earlier offsets valid; pair with `diagnostic-fixes` to
+    auto-apply a diagnostic's suggestions
+- rounded out the repetition/control combinators against Parsec/Megaparsec/nom/
+  FParsec:
+  - `some-till` — `many-till` requiring at least one match before the end parser
+    (Megaparsec's `someTill`)
+  - `length-count` — parse a count for N, then parse an item parser exactly N
+    times (nom's `length_count`); each item must consume input, so a hostile
+    count cannot force an unbounded loop
+  - `not-empty` — fail if a parser succeeds without consuming input, to guarantee
+    forward progress (FParsec's `notEmpty`)
+- added opt-in packrat memoization and completed the token-matching family:
+  - `memoize` / `with-parse-memoization` — wrap a parser so that, inside the
+    dynamic extent, its result at each position is computed once and reused,
+    turning an ambiguous or heavily backtracking grammar's exponential
+    re-parsing into linear-time packrat parsing (a no-op outside the extent, so
+    grammars that do not need it are unaffected)
+  - `token-value-in` / `token-value-not-in` — match (or reject) a token whose
+    `token-value` is one of a set, completing the type/text/value matching family
+    alongside `token-type-in` / `token-text-in`
+- added structured-diagnostic accessors, the counterparts of the string
+  renderers:
+  - `parse-failure->diagnostics` — the structured `diagnostic` objects for a
+    failure (its attached diagnostics, or a synthesized default), for rendering
+    or aggregating failures with your own tooling
+  - `diagnostics->string` — render a whole list of diagnostics (blank-line
+    separated), the multi-diagnostic form of `diagnostic->string`
+- added two stream/error-handling conveniences:
+  - `filter-tokens` — return a fresh vector of the tokens satisfying a predicate,
+    for pruning a stream (e.g. dropping non-skipped `:comment` tokens) before
+    parsing
+  - `parse-failure-span` — the source span of a failure's actual token (or `nil`
+    at end of input), for rendering a caret or slicing the offending region
+    without building a full diagnostic
+- added tree construction and serialization-round-trip helpers for both node
+  families, removing the boilerplate of building located nodes by hand:
+  - `token->ast-node` / `token->cst-node` — build a leaf node from a token (its
+    value from a `:value-function`, `token-text` by default, and its span from
+    the token)
+  - `ast-node-of` / `cst-node-of` — run a parser and wrap the result into a node
+    whose span covers the consumed tokens (value in `value`, or in `children`
+    with `:as-children t`)
+  - `sexp->ast-node` / `sexp->cst-node` — reconstruct a node from the plist that
+    `ast-node->sexp` / `cst-node->sexp` produce, rebuilding an embedded span, so
+    the `->sexp` form round-trips
+- added tree-rendering helpers for both node families, completing the tree
+  lifecycle (build, traverse, query, fold, compare, and now render):
+  - `ast-node->string` / `cst-node->string` — a human-readable indented tree
+    (one node per line, `type` then `value`) for debugging and REPL inspection
+  - `ast-node->dot` / `cst-node->dot` — a Graphviz DOT digraph (`:graph-name`
+    names the graph) for visualizing a parse tree with `dot`
+- added an operator-precedence expression builder and two combinator gaps:
+  - `make-expression-parser` — the combinator-layer counterpart to the Pratt
+    parser: build a parser from an operator table (precedence levels highest
+    first, with `:prefix` / `:postfix` / `:infix-left` / `:infix-right` /
+    `:infix-non-assoc` operator specs whose parsers yield the combining
+    function), for when operands and operators are arbitrary parsers rather than
+    single tokens; see `examples/operator-precedence-example.lisp`
+  - `sequence-of` — the list form of `seq` (`(sequence-of (list a b))` is
+    `(seq a b)`), the counterpart to `choice`
+  - `chain-postfix` — a left-associative suffix chain (member access, calls,
+    indexing): parse a base, then fold zero or more suffix parsers, each yielding
+    a function that transforms the accumulated value
+- broadened the surface again with a further batch of commit-preserving
+  additions, each built on the existing primitives and covered by tests:
+  - backtracking control: `attempt` — the inverse of `commit`, demoting a
+    parser's committed failure to a recoverable one so a surrounding
+    `opt`/`many`/`sep-by` backtracks to the start position (Parsec's `try`)
+  - permutation parsing: `permute` — parse a fixed set of parsers in any order,
+    each exactly once, returning their values in argument order
+  - value shaping: `pair` and `separated-pair` (nom-style two-parser sequences),
+    plus `fold-many1` (the one-or-more form of `fold-many`)
+  - negative token sets: `token-type-not-in` / `token-text-not-in`, the
+    complements of `token-type-in` / `token-text-in`
+  - tokenizer rules: `make-radix-integer-rule` (base 2..36 with an optional
+    case-insensitive prefix such as `0x`/`0b`/`0o`), `make-float-rule` (decimal
+    exponents, e.g. `6.022e23`, with a clamped `*maximum-number-exponent*` guard),
+    `make-operator-rule` (longest-match over an operator set), and
+    `make-nested-block-comment-rule` (comments that nest); plus `:case-sensitive`
+    on `make-keyword-rule` and `:escapes` decoding on `make-string-rule`
+  - Pratt registrars: `register-ternary` (`cond ? then : else`, right
+    associative) and `register-infix-non-assoc` (chaining is a parse error)
+  - tree utilities for both node families: `ast-node-reduce` / `cst-node-reduce`
+    (fold over nodes), `ast-node-equal` / `cst-node-equal` (structural equality),
+    and an `:order :post` option on `ast-node-walk` / `cst-node-walk`
+- expanded the combinator surface with commit-preserving additions built on the
+  existing primitives:
+  - choice/value: `choice` (list form of `alt`), `option` (`opt` with an
+    explicit default), `fail-parser`, `as-value`, `pure`
+  - repetition: `times`, `skip-many`, `skip-many1`, `fold-many`, `many-till`,
+    and `chainl` / `chainr` (defaulting variants of `chainl1` / `chainr1`)
+  - applicative and source spans: `seq-map` (lift a function over `seq`), `pick`
+    (keep the N-th result of a sequence), `spanning` (attach the merged source
+    span of the consumed tokens, for building located AST/CST nodes)
+  - token matching: `any-token`, `token-type-in`, `satisfies-value`
+  - failure context: `context` (append an explanatory `note-diagnostic` to a
+    failure without changing its expected form or commitment)
+  - tokenizer rule: `make-char-rule` (single character by character, set, or
+    predicate)
+  - tree queries generated for both node families: `ast-node-collect` /
+    `cst-node-collect` (all matches), `ast-node-count` / `cst-node-count`,
+    `ast-node-depth` / `cst-node-depth`
+  - range repetition: `times-between` (greedy min..max), `at-least` and
+    `at-most` (open-ended variants), plus `surrounded-by` for symmetric
+    delimiters
+  - high-level Pratt registrars that hide the raw nud/led protocol and
+    binding-power arithmetic: `register-atom`, `register-prefix`,
+    `register-infix-left`, `register-infix-right`, `register-postfix`, and
+    `register-grouping` (matched `open expr close` pairs)
+  - error recovery: `skip-until` and `recover` for panic-mode
+    resynchronisation, so a single parse can report several errors (drive the
+    loop with `(many-till statement (end-of-input))`)
+  - tree traversal generated for both node families: `ast-node-walk` /
+    `cst-node-walk` (pre-order visit), `ast-node-find` / `cst-node-find` (first
+    match), `ast-node-map` / `cst-node-map` (bottom-up rebuild)
+  - ergonomic macros: `parse-let*` (do-notation over `bind-parser`),
+    `parser-lazy` and `defparser` (forward references and recursive grammars)
+  - comprehensive gap closure against Parsec/Megaparsec/nom/FParsec:
+    `end-by` / `end-by1` (required terminator), `verify` (assert a predicate on a
+    parsed value), `commit` (PEG cut), `current-position` (capture the token
+    index), `token-text-in` (match a lexeme set), `recognize` (span of consumed
+    tokens), and the span helpers `span-contains-position-p` and `span-text`
 - fixed a silent error-swallowing bug in `bind-parser` (the foundation of
   `preceded-by`, `terminated-by`, `between`, and the `delimited-sep-by*`
   wrappers): once the leading parser consumed input, a failing trailing parser

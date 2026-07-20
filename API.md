@@ -16,7 +16,10 @@ and diagnostics.
 - constructors: `make-span`
 - accessors: `span-source`, `span-start`, `span-end`, `span-start-line`,
   `span-start-column`, `span-end-line`, `span-end-column`
-- helpers: `span-length`, `span-empty-p`, `span-merge`
+- helpers: `span-length`, `span-empty-p`, `span-merge`,
+  `span-contains-position-p` (is a character offset inside the half-open span),
+  `span-text` (the source substring the span covers, defaulting to the span's own
+  `span-source`)
 
 ## Tokens
 
@@ -26,6 +29,9 @@ Tokens carry lexical meaning and source metadata.
 - constructor: `make-token`
 - accessors: `token-type`, `token-text`, `token-value`, `token-metadata`,
   `token-span`, `token-start`, `token-end`
+- stream helper: `filter-tokens` returns a fresh vector of the tokens satisfying
+  a predicate, for pruning a stream before parsing (e.g. dropping non-skipped
+  `:comment` tokens)
 - when tokens come from an external pipeline, `token-metadata` may carry
   plist-style `(:source <string>)`; diagnostics use it together with
   `token-start` / `token-end` to recover line/column data when `token-span`
@@ -50,8 +56,17 @@ Tokenizer helpers keep the lexical layer independent and REPL-friendly.
 - built-in rules: `make-literal-rule`, `make-keyword-rule`,
   `make-whitespace-rule`,
   `make-identifier-rule`, `make-number-rule`, `make-string-rule`,
-  `make-predicate-rule`, `make-line-comment-rule`, `make-block-comment-rule`
+  `make-predicate-rule`, `make-char-rule`, `make-line-comment-rule`,
+  `make-block-comment-rule`, `make-nested-block-comment-rule`
+- numeric and operator rules: `make-radix-integer-rule`, `make-float-rule`,
+  `make-operator-rule`
 - entry points: `tokenize`, `tokenize-string`
+
+`make-char-rule` matches exactly one character described by a `character`, a
+string/list of characters (any member), or a predicate function, with an
+optional `:value-function`; it is the single-character counterpart to
+`make-predicate-rule` (which scans a run) and suits punctuation and one-character
+operators.
 
 `make-literal-rule` performs raw prefix matching and is a good fit for
 punctuation and operators. Use `make-keyword-rule` when a reserved word should
@@ -60,7 +75,28 @@ match only at identifier boundaries, such as `let`.
 `make-identifier-rule` accepts `:start-predicate` and `:continue-predicate`
 for languages whose identifiers allow sigils or suffix markers. When reserved
 words should respect that same custom alphabet, pass the matching
-`identifier-char-predicate` to `make-keyword-rule`.
+`identifier-char-predicate` to `make-keyword-rule`. Pass `:case-sensitive nil`
+to `make-keyword-rule` for case-insensitive keywords (`SELECT`, `select` and
+`Select` all match `select`, while the token text and value stay the canonical
+literal).
+
+`make-radix-integer-rule` reads integers in base 2..36 introduced by an optional
+`:prefix` (matched case-insensitively, e.g. `0x`, `0b`, `0o`), producing the
+integer value via `parse-integer` -- never the reader. `make-float-rule` reads a
+floating literal with an optional fractional part and an optional decimal
+exponent (`3.14`, `1e10`, `2.5e-3`), yielding a `double-float` (or the
+`:float-type` requested); it matches only lexemes carrying a fractional part or
+exponent unless `:require-fractional nil`, and leaves a leading sign to the
+parser unless `:allow-sign t`. `make-operator-rule` matches the longest of a set
+of operator strings, so `==` wins over `=` without hand-ordering separate literal
+rules.
+
+`make-nested-block-comment-rule` matches block comments that nest (Rust
+`/* .. /* .. */ .. */`, Common Lisp `#| .. |#`), unlike `make-block-comment-rule`
+which stops at the first close. `make-string-rule` accepts `:escapes`, an alist
+of `(escaped-char . replacement-char)`, to decode escape sequences such as `\n`
+into their control characters; a character absent from the alist is taken
+literally.
 
 - `tokenize` rejects a source longer than `*maximum-tokenizer-source-length*`
   and stops once it has emitted `*maximum-tokenizer-tokens*` tokens, both by
@@ -74,6 +110,10 @@ words should respect that same custom alphabet, pass the matching
   run cannot force multi-megabyte bignum arithmetic; the scanner simply stops
   there and the remaining digits start a new number token, the same graceful
   split already used for a stray interior `.`
+- `make-float-rule` clamps the exponent magnitude at `*maximum-number-exponent*`
+  and saturates on overflow (a huge positive exponent yields the largest
+  representable float, a huge negative one yields zero), so a literal like
+  `1e999999` neither builds a gigantic bignum nor traps
 
 ## Diagnostics
 
@@ -84,15 +124,28 @@ Diagnostics and parse failures preserve structured error data.
 - accessors: `diagnostic-kind`, `diagnostic-message`, `diagnostic-span`,
   `diagnostic-notes`, `diagnostic-fixes`, `diagnostic-data`
 - render helper: `diagnostic->string` renders the main message, opt
-  source excerpt, notes, and fix-it hints in a readable multiline form
+  source excerpt, notes, and fix-it hints in a readable multiline form;
+  `diagnostics->string` renders a whole list of diagnostics (blank-line
+  separated), for a recovery parse's collected diagnostics
 - convenience constructors: `warning-diagnostic`, `error-diagnostic`,
   `note-diagnostic`, `fix-it`, `make-fix-it`
 - fix-it accessors: `fix-it-span`, `fix-it-replacement`
+- fix-it application: `apply-fix-it` returns source with one fix-it's span region
+  replaced by its replacement; `apply-fixes` applies a list of fix-its
+  (last-to-first, so earlier offsets stay valid), turning suggestion data into
+  corrected text -- e.g. `(apply-fixes source (diagnostic-fixes diagnostic))`
 - parse failure helpers: `make-parse-failure`, `parse-failure-position`,
   `parse-failure-expected`, `parse-failure-actual`,
   `parse-failure-committed-p`,
   `parse-failure-diagnostics`, `parse-failure->string`,
   `merge-parse-failures`
+- `parse-failure-span` returns the source span of the failure's actual token (or
+  `nil` at end of input), a convenience for rendering a caret or slicing the
+  offending source region without building a full diagnostic
+- `parse-failure->diagnostics` returns the structured `diagnostic` objects for a
+  failure (its attached diagnostics, or a synthesized default) -- the structured
+  counterpart of `parse-failure->string`, for rendering or aggregating failures
+  with your own tooling
 - `parse-failure->string` is the stable top-level renderer for parse
   failures; it joins attached diagnostics when present and synthesizes a
   readable fallback message when only `expected` / `actual` data is available
@@ -129,6 +182,9 @@ failure object on error.
   `delimited-sep-end-by1`, `operator-parser`,
   `lookahead`, `not-followed-by`
 - functional combinators: `map-parser`, `bind-parser`, `return-parser`
+- failure context: `context` (append an explanatory `note-diagnostic` to a
+  failure while leaving its expected form, actual token, and commitment intact --
+  unlike `label`, which replaces the expected form)
 - termination: `end-of-input`
 - token navigation: `peek-token`, `next-token`, `eof-token-p`
 - `end-of-input` and `not-followed-by` attach diagnostics from the failing
@@ -170,6 +226,135 @@ failure object on error.
   exhausting the control stack; rebind it for intentionally large or deep
   grammars
 
+### Extended Combinators
+
+The following combinators build on the primitives above and inherit their
+commitment model unchanged (a recoverable failure backtracks; a committed
+failure propagates).
+
+- token matching:
+  - `any-token` — match any single token, failing only at end of input
+  - `token-type-in` — match a token whose type is one of the given types; the
+    failure's expected form is the list of types
+  - `token-text-in` — match a token whose `token-text` is one of the given
+    lexemes (the text counterpart to `token-type-in`)
+  - `token-type-not-in` / `token-text-not-in` — the complements: match a token
+    whose type / text is *none* of the given set (e.g. any token except a
+    closing bracket), with an expected form of `(:not ...)`
+  - `token-value-in` / `token-value-not-in` — match (or reject) a token whose
+    `token-value` is one of a set of decoded payloads, completing the
+    type/text/value matching family
+  - `take-while` / `take-while1` — match a run of consecutive tokens satisfying a
+    predicate, returning the list (`take-while1` requires at least one);
+    Megaparsec's `takeWhileP` / `takeWhile1P`. `skip-while` skips such a run,
+    discarding it
+  - `satisfies-value` — match a token whose `token-value` satisfies a predicate,
+    branching on a decoded payload rather than only the token type
+- choice and value shaping:
+  - `choice` — ordered choice over a *list* of parsers; the list form of `alt`
+    (`(choice (list a b))` is `(alt a b)`), for alternatives computed at runtime
+  - `sequence-of` — run a *list* of parsers in order, returning the list of
+    values; the list form of `seq` (`(sequence-of (list a b))` is `(seq a b)`),
+    the counterpart to `choice`
+  - `option` — like `opt` but yields an explicit default value instead of `nil`
+    when the parser does not match; a committed failure still propagates
+  - `fail-parser` — always fails at the current position with a message
+    (non-committed), turning a semantic guard into a parse error; accepts an
+    `:expected` keyword to shape the failure's expected form
+  - `as-value` — run a parser, discard its result, and yield a constant value,
+    preserving the parser's consumption and commitment
+  - `pure` — alias of `return-parser`, named for the Applicative operation
+- backtracking control:
+  - `attempt` — the inverse of `commit`: demote a parser's failure to a
+    non-committed one so a surrounding `opt`/`many`/`sep-by` backtracks to the
+    start position even after input was consumed (Parsec/Megaparsec's `try`).
+    `alt` already backtracks unconditionally, so `attempt` matters for the
+    commitment-respecting combinators, e.g.
+    `(opt (attempt (seq (literal "else") (literal "if"))))`
+- packrat memoization:
+  - `memoize` — wrap a parser so that, inside a `with-parse-memoization` extent,
+    its result at each position is computed once and reused on any later visit
+    (turning an ambiguous / heavily backtracking grammar's exponential
+    re-parsing into linear-time packrat parsing); a no-op outside the extent
+  - `with-parse-memoization` — a macro establishing a fresh per-parse cache for
+    the `memoize` parsers run inside it; wrap a top-level parse call
+- permutation:
+  - `permute` — parse a fixed set of parsers in any order, each exactly once,
+    returning their values in the original argument order (attribute lists,
+    keyword blocks); a committed sub-failure propagates, a recoverable one lets
+    the other elements be tried, and a missing element fails
+- repetition:
+  - `times` — parse a parser exactly N times, returning the N results
+  - `skip-many` / `skip-many1` — parse zero-or-more / one-or-more and discard the
+    results (yielding `t`) without allocating the intermediate list
+  - `fold-many` / `fold-many1` — parse zero-or-more / one-or-more, folding each
+    result into an accumulator (`(fold-many function initial parser)`) without
+    building a list; `fold-many1` requires at least one match
+  - `many-till` / `some-till` — parse repeatedly until an `end` parser matches,
+    returning the collected results (`end`'s value is discarded and its input
+    consumed); `some-till` requires at least one match before `end`
+  - `length-count` — parse a count parser for a non-negative integer N, then
+    parse an item parser exactly N times (length-prefixed sequences like
+    `3 a b c`); each item must consume input, so a hostile count cannot loop
+  - `not-empty` — run a parser but fail if it succeeded without consuming input,
+    to guarantee forward progress before repeating an optional-matching parser
+  - `chain-postfix` — parse a base, then apply zero or more suffix parsers
+    left-to-right, each yielding a function that transforms the accumulated value;
+    the left-associative suffix chain for member access, calls, and indexing
+    (`primary .field (args) [i] ...`)
+  - `chainl` / `chainr` — like `chainl1` / `chainr1` but yield a supplied default
+    (consuming nothing) when the operand does not match even once
+  - `times-between` — parse greedily between a minimum and maximum number of
+    times; fewer than the minimum is a failure, a further recoverable failure
+    past the minimum simply stops
+  - `at-least` / `at-most` — the open-ended variants: `at-least` parses a minimum
+    or more (`(at-least 0 p)` is `many`, `(at-least 1 p)` is `many1`), `at-most`
+    parses zero up to a cap (`(times-between 0 max p)`)
+  - `end-by` / `end-by1` — like `sep-by` but every item must be *followed* by the
+    separator (a required terminator, e.g. `item ;` runs), as opposed to
+    `sep-end-by`'s optional trailing separator
+  - `surrounded-by` — parse a body wrapped in a matching delimiter on both sides,
+    `(surrounded-by d p)` is `(between d p d)`, for quotes or symmetric brackets
+- error recovery (panic-mode resynchronisation):
+  - `skip-until` — consume tokens until one satisfies a predicate (optionally
+    `:including` the match), always succeeding with the list of skipped tokens
+  - `recover` — run a parser and, on failure, run a recovery parser from the
+    failure position, keeping the failure's diagnostics on the recovered success
+    so a single parse can report several errors; drive the surrounding loop with
+    `(many-till statement (end-of-input))` so it halts on end of input
+- applicative shaping and source spans:
+  - `seq-map` — run parsers in sequence (`seq`) and apply a function to their
+    results as separate positional arguments, e.g.
+    `(seq-map #'make-node a b c)`
+  - `pick` — run parsers in sequence and keep only the N-th (0-based) result,
+    e.g. `(pick 1 open body close)` keeps `body`
+  - `pair` — run two parsers in sequence and return both results as a
+    two-element list (nom's `pair`)
+  - `separated-pair` — run `first separator second`, drop the separator, and
+    return `(first-value second-value)` (nom's `separated_pair`)
+  - `spanning` — run a parser and call `(function value span)` where `span`
+    covers the tokens the parser consumed (or `nil` if none), for building
+    located AST/CST nodes
+  - `recognize` — run a parser, discard its value, and return the merged source
+    span of the tokens it consumed (the span-only form of `spanning`)
+- value constraints and cut:
+  - `verify` — run a parser then require its value to satisfy a predicate, failing
+    (non-committed, at the original position) when it does not; for semantic
+    constraints a grammar cannot express structurally
+  - `commit` — promote any failure of a parser to a committed one, a PEG-style
+    cut so a surrounding `opt`/`many`/`sep-by` will not backtrack past it
+  - `current-position` — succeed without consuming, yielding the current token
+    index, to capture positions inside `parse-let*` / `seq-map`
+- ergonomic macros:
+  - `parse-let*` — sequential monadic binding (do-notation) that expands to
+    nested `bind-parser` calls; each `(var parser-form)` binds `var` for the rest
+    of the bindings and the body, whose value becomes the result (a `_` binding
+    is ignored)
+  - `parser-lazy` — defer building a parser expression until first use (memoized),
+    enabling forward references and directly recursive grammars
+  - `defparser` — define a function returning a `parser-lazy`-wrapped parser, so
+    self- and mutually-recursive grammars can be written in natural order
+
 Example:
 
 ```lisp
@@ -190,6 +375,31 @@ Example:
 - [`examples/token-stream-example.lisp`](./examples/token-stream-example.lisp)
 - [`examples/mini-language-parser.lisp`](./examples/mini-language-parser.lisp)
 
+### Operator-Precedence Expression Builder
+
+`make-expression-parser` builds an ordinary combinator parser from an operator
+table — the combinator-layer counterpart to the token-keyed Pratt parser below.
+Reach for it when the operands and operators are themselves arbitrary parsers
+(rather than single tokens dispatched by type).
+
+- `(make-expression-parser term table)` — `term` parses an operand; `table` is a
+  list of precedence levels, **highest precedence first**. Each level is a list
+  of operator specifications, each a `(keyword op-parser)` pair where `op-parser`
+  yields the combining function:
+  - `(:prefix op)` / `(:postfix op)` — unary, `op` yields a one-argument function
+    (both may repeat within a level)
+  - `(:infix-left op)` / `(:infix-right op)` — binary, `op` yields a two-argument
+    function; associativity is handled internally via `chainl1` / `chainr1`
+  - `(:infix-non-assoc op)` — binary with no chaining (`a op b` but not
+    `a op b op c`)
+- a level may combine any prefix/postfix operators with at most one infix
+  associativity; mixing left- and right-associative infix operators in one level
+  is ambiguous and signals an error at build time
+- built entirely on the verified primitives (`chainl1` / `chainr1`, `many`,
+  `parse-let*`, `opt`, `alt`), so it inherits their commitment model
+
+- [`examples/operator-precedence-example.lisp`](./examples/operator-precedence-example.lisp)
+
 ## Pratt Parsing
 
 Pratt parsing is the best fit when you need expression precedence without a
@@ -201,8 +411,25 @@ large grammar framework.
   `make-pratt-postfix-entry`
 - accessors: `pratt-table-prefixes`, `pratt-table-infixes`,
   `pratt-table-postfixes`
-- registration: `register-prefix-operator`, `register-infix-operator`,
-  `register-postfix-operator`
+- registration (low level, raw nud/led closures): `register-prefix-operator`,
+  `register-infix-operator`, `register-postfix-operator`
+- registration (high level, plain value builders — hide the nud/led protocol and
+  binding-power arithmetic):
+  - `register-atom` — a leaf token (`(builder token)`, consumes nothing further)
+  - `register-prefix` — a unary prefix operator parsing one operand at a binding
+    power (`(builder operand)`)
+  - `register-infix-left` / `register-infix-right` — a binary operator of a given
+    binding power, left- or right-associative (`(builder left right)`); the
+    right-binding-power offset needed for associativity is handled internally
+  - `register-postfix` — a unary postfix operator (`(builder operand)`)
+  - `register-grouping` — a matched `open expr close` delimiter pair yielding the
+    inner value, reporting a failure that expects the close key when it is missing
+  - `register-ternary` — a right-associative ternary conditional
+    `cond ? then : else` (`(builder cond then else)`), reporting a failure that
+    expects the colon key when it is missing
+  - `register-infix-non-assoc` — a non-associative binary operator: `a op b` is
+    accepted but a chain `a op b op c` is a parse error
+    (`:non-associative-operator`), as with many comparison operators
 - parse entry points: `parse-pratt`, `parse-pratt-all`,
   `parse-pratt-source`
 - `parse-pratt` and `parse-pratt-all` accept `:position` to start from a
@@ -234,6 +461,39 @@ AST and CST helpers keep tree-shaped output simple and explicit.
   `ast-node-children`, `ast-node-span`, `ast-node-data`, `ast-node->sexp`
 - CST: `cst-node`, `make-cst-node`, `cst-node-type`, `cst-node-value`,
   `cst-node-children`, `cst-node-span`, `cst-node-data`, `cst-node->sexp`
+- construction (for both families): `token->ast-node` / `token->cst-node` build a
+  leaf node from a token (its `value` from `:value-function`, `token-text` by
+  default, and its `span` from the token); `ast-node-of` / `cst-node-of` run a
+  parser and wrap the result into a node whose `span` covers the consumed tokens
+  (the value goes in `value`, or in `children` with `:as-children t`)
+- serialization (for both families): `ast-node->sexp` / `cst-node->sexp` render a
+  node as a plist (optionally with `:include-span` / `:include-data`), and
+  `sexp->ast-node` / `sexp->cst-node` reconstruct the node from that plist,
+  rebuilding an embedded span — a round trip
+  (`(ast-node-equal n (sexp->ast-node (ast-node->sexp n)))` is true)
+- rendering (for both families): `ast-node->string` / `cst-node->string` render a
+  human-readable indented tree (one node per line, `type` then `value`), for
+  debugging and REPL inspection; `ast-node->dot` / `cst-node->dot` render a
+  Graphviz DOT digraph (`:graph-name` names the graph) for visualizing a tree
+  with `dot` — the machine-readable counterparts of the `->sexp` plist
+- traversal (generated for both families): `ast-node-walk` / `cst-node-walk`
+  visit every node for side effects (returning the root), in pre-order by default
+  or post-order with `:order :post`;
+  `ast-node-find` / `cst-node-find` return the first node satisfying a predicate
+  (pre-order), or `nil`; `ast-node-map` / `cst-node-map` rebuild the tree
+  bottom-up, replacing each node with the result of a function applied to a copy
+  whose children have already been mapped (the original tree is left untouched)
+- queries (also generated for both families): `ast-node-collect` /
+  `cst-node-collect` return every node satisfying a predicate (pre-order list);
+  `ast-node-count` / `cst-node-count` count nodes (matching an optional predicate,
+  every node by default); `ast-node-depth` / `cst-node-depth` return the maximum
+  depth (a leaf has depth 1)
+- folding and comparison (for both families): `ast-node-reduce` /
+  `cst-node-reduce` fold a function over every node from an initial accumulator
+  (`(reduce-fn accumulator node)`, in `:order :pre` or `:post`);
+  `ast-node-equal` / `cst-node-equal` test two trees for structural equality
+  (equal type, value, and children), optionally including span
+  (`:include-span t`) and data (`:include-data t`)
 
 ## Testing
 
