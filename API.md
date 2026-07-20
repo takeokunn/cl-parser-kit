@@ -98,13 +98,18 @@ of `(escaped-char . replacement-char)`, to decode escape sequences such as `\n`
 into their control characters; a character absent from the alist is taken
 literally.
 
-- `tokenize` rejects a source longer than `*maximum-tokenizer-source-length*`
-  and stops once it has emitted `*maximum-tokenizer-tokens*` tokens, both by
-  signaling `tokenizer-resource-limit-exceeded` (accessors
+- `tokenize` rejects a source longer than `*maximum-tokenizer-source-length*`,
+  stops once it has emitted `*maximum-tokenizer-tokens*` tokens, and rejects a
+  tokenizer with more than `*maximum-tokenizer-rules*` rules, all by signaling
+  `tokenizer-resource-limit-exceeded` (accessors
   `tokenizer-resource-limit-exceeded-kind`,
   `tokenizer-resource-limit-exceeded-value`,
   `tokenizer-resource-limit-exceeded-limit`) instead of exhausting memory;
-  rebind either limit for intentionally large inputs
+  rebind tokenizer limits for intentionally large inputs
+- tokenizer rule constructors that accept computed alternative sets, currently
+  `make-operator-rule`, reject more than
+  `*maximum-tokenizer-rule-alternatives*` alternatives with
+  `tokenizer-resource-limit-exceeded`
 - `make-number-rule` caps a single numeric lexeme at
   `*maximum-number-lexeme-length*` characters so an adversarially long digit
   run cannot force multi-megabyte bignum arithmetic; the scanner simply stops
@@ -127,13 +132,27 @@ Diagnostics and parse failures preserve structured error data.
   source excerpt, notes, and fix-it hints in a readable multiline form;
   `diagnostics->string` renders a whole list of diagnostics (blank-line
   separated), for a recovery parse's collected diagnostics
+- `diagnostic->string` caps rendered notes and fix-it hints at
+  `*maximum-diagnostic-related-count*`, signaling
+  `diagnostic-resource-limit-exceeded` for externally constructed diagnostics
+  with adversarially large or improper related-item lists; accessors:
+  `diagnostic-resource-limit-exceeded-kind`,
+  `diagnostic-resource-limit-exceeded-value`,
+  `diagnostic-resource-limit-exceeded-limit`
 - convenience constructors: `warning-diagnostic`, `error-diagnostic`,
   `note-diagnostic`, `fix-it`, `make-fix-it`
 - fix-it accessors: `fix-it-span`, `fix-it-replacement`
 - fix-it application: `apply-fix-it` returns source with one fix-it's span region
   replaced by its replacement; `apply-fixes` applies a list of fix-its
-  (last-to-first, so earlier offsets stay valid), turning suggestion data into
-  corrected text -- e.g. `(apply-fixes source (diagnostic-fixes diagnostic))`
+  while preserving source-relative spans. Non-overlapping fixes are emitted in
+  source order, overlapping fixes keep last-to-first sequential semantics, and
+  same-position zero-width insertions preserve input order. `apply-fixes`
+  consumes at most `*maximum-diagnostic-fix-count*` input entries; `nil` entries
+  are skipped for application but still counted. Excess data signals
+  `diagnostic-resource-limit-exceeded` with kind `:fix-count`; circular or
+  improper fix lists are rejected through the same condition. This turns
+  suggestion data into corrected text -- e.g.
+  `(apply-fixes source (diagnostic-fixes diagnostic))`
 - parse failure helpers: `make-parse-failure`, `parse-failure-position`,
   `parse-failure-expected`, `parse-failure-actual`,
   `parse-failure-committed-p`,
@@ -149,6 +168,18 @@ Diagnostics and parse failures preserve structured error data.
 - `parse-failure->string` is the stable top-level renderer for parse
   failures; it joins attached diagnostics when present and synthesizes a
   readable fallback message when only `expected` / `actual` data is available
+- parse failure expected-item and attached-diagnostic lists are capped by
+  `*maximum-parse-failure-expected-count*` and
+  `*maximum-parse-failure-diagnostic-count*` during merge and rendering; excess
+  data, circular lists, and improper list tails signal
+  `parse-failure-resource-limit-exceeded` (accessors
+  `parse-failure-resource-limit-exceeded-kind`,
+  `parse-failure-resource-limit-exceeded-value`,
+  `parse-failure-resource-limit-exceeded-limit`)
+- `diagnostics->string` skips `nil` entries while streaming and caps the number
+  of input list entries with `*maximum-diagnostic-count*`; excess data signals
+  `diagnostic-resource-limit-exceeded`; circular or improper diagnostic lists
+  are rejected through the same condition
 - `parse-all` trailing-token failures preserve the actual trailing token and
   attach a diagnostic from the token span, falling back to `token-start` /
   `token-end` offsets or the current parser position when full span data is
@@ -187,6 +218,8 @@ failure object on error.
   unlike `label`, which replaces the expected form)
 - termination: `end-of-input`
 - token navigation: `peek-token`, `next-token`, `eof-token-p`
+- tree helpers reject malformed child lists with `tree-child-list-invalid`; use
+  `tree-child-list-invalid-kind` to distinguish `:circular` from `:improper`
 - `end-of-input` and `not-followed-by` attach diagnostics from the failing
   token span, falling back to `token-start` / `token-end` offsets when span
   data is unavailable, or to the current parser position as a last resort
@@ -225,6 +258,18 @@ failure object on error.
   exceeds it, parsing returns a `:maximum-recursion-depth` failure instead of
   exhausting the control stack; rebind it for intentionally large or deep
   grammars
+- bounded repetition created with `times`, `times-between`, `at-most`, or
+  `length-count` is capped by `*maximum-parser-repetition-count*`; hostile
+  construction-time bounds signal before allocating unbounded parser state, and
+  hostile length-prefixed counts fail the parse instead of looping; rebind it
+  for intentionally large bounded repetitions
+- public token-stream boundaries are capped by `*maximum-parser-tokens*`;
+  `run-parser`, `parse-tokens`, `parse-all`, `parse-pratt`, and
+  `parse-pratt-all` return a `:maximum-parser-tokens` parse failure before
+  walking oversized proper token lists or vectors; `filter-tokens` signals an
+  error at the same limit; circular or improper token lists are rejected before
+  traversal; source-oriented entry points also inherit this check after
+  tokenization
 
 ### Extended Combinators
 
@@ -244,6 +289,9 @@ failure propagates).
   - `token-value-in` / `token-value-not-in` — match (or reject) a token whose
     `token-value` is one of a set of decoded payloads, completing the
     type/text/value matching family
+  - token set combinators cap their argument count at
+    `*maximum-parser-repetition-count*`, so caller-constructed sets cannot
+    create unbounded construction or membership work
   - `take-while` / `take-while1` — match a run of consecutive tokens satisfying a
     predicate, returning the list (`take-while1` requires at least one);
     Megaparsec's `takeWhileP` / `takeWhile1P`. `skip-while` skips such a run,
@@ -282,9 +330,11 @@ failure propagates).
   - `permute` — parse a fixed set of parsers in any order, each exactly once,
     returning their values in the original argument order (attribute lists,
     keyword blocks); a committed sub-failure propagates, a recoverable one lets
-    the other elements be tried, and a missing element fails
+    the other elements be tried, and a missing element fails; the parser count is
+    capped by `*maximum-parser-repetition-count*`
 - repetition:
-  - `times` — parse a parser exactly N times, returning the N results
+  - `times` — parse a parser exactly N times, returning the N results; N is
+    capped by `*maximum-parser-repetition-count*`
   - `skip-many` / `skip-many1` — parse zero-or-more / one-or-more and discard the
     results (yielding `t`) without allocating the intermediate list
   - `fold-many` / `fold-many1` — parse zero-or-more / one-or-more, folding each
@@ -295,7 +345,8 @@ failure propagates).
     consumed); `some-till` requires at least one match before `end`
   - `length-count` — parse a count parser for a non-negative integer N, then
     parse an item parser exactly N times (length-prefixed sequences like
-    `3 a b c`); each item must consume input, so a hostile count cannot loop
+    `3 a b c`); N is capped by `*maximum-parser-repetition-count*`, and each
+    item must consume input, so a hostile count cannot loop
   - `not-empty` — run a parser but fail if it succeeded without consuming input,
     to guarantee forward progress before repeating an optional-matching parser
   - `chain-postfix` — parse a base, then apply zero or more suffix parsers
@@ -325,9 +376,12 @@ failure propagates).
 - applicative shaping and source spans:
   - `seq-map` — run parsers in sequence (`seq`) and apply a function to their
     results as separate positional arguments, e.g.
-    `(seq-map #'make-node a b c)`
+    `(seq-map #'make-node a b c)`; parser-list construction is capped by
+    `*maximum-parser-repetition-count*` and the final function-call arity is
+    capped by `*maximum-parser-apply-arity*`
   - `pick` — run parsers in sequence and keep only the N-th (0-based) result,
-    e.g. `(pick 1 open body close)` keeps `body`
+    e.g. `(pick 1 open body close)` keeps `body`; parser-list construction is
+    capped by `*maximum-parser-repetition-count*`
   - `pair` — run two parsers in sequence and return both results as a
     two-element list (nom's `pair`)
   - `separated-pair` — run `first separator second`, drop the separator, and
@@ -395,6 +449,9 @@ Reach for it when the operands and operators are themselves arbitrary parsers
 - a level may combine any prefix/postfix operators with at most one infix
   associativity; mixing left- and right-associative infix operators in one level
   is ambiguous and signals an error at build time
+- operator tables and operator sets are bounded by
+  `*maximum-parser-repetition-count*`, so computed or adversarially circular
+  grammar tables fail at construction time instead of walking indefinitely
 - built entirely on the verified primitives (`chainl1` / `chainr1`, `many`,
   `parse-let*`, `opt`, `alt`), so it inherits their commitment model
 
@@ -494,6 +551,13 @@ AST and CST helpers keep tree-shaped output simple and explicit.
   `ast-node-equal` / `cst-node-equal` test two trees for structural equality
   (equal type, value, and children), optionally including span
   (`:include-span t`) and data (`:include-data t`)
+- resource limits: tree traversal, conversion, comparison, and rendering helpers
+  enforce `*maximum-tree-depth*` and `*maximum-tree-nodes*`, signaling
+  `tree-depth-limit-exceeded` with `tree-depth-limit-depth` /
+  `tree-depth-limit-limit` for excessively deep inputs and
+  `tree-node-limit-exceeded` with `tree-node-limit-count` /
+  `tree-node-limit-limit` for excessively wide inputs; rebind them for
+  intentionally large generated trees
 
 ## Testing
 
@@ -522,8 +586,11 @@ If you are new to the library, start here:
    the operator token itself does not carry semantic payload. `chainr1`
    recurses in step with the right-associative nesting depth; like the rest
    of the combinator engine, that depth is bounded by
-   `*maximum-parser-recursion-depth*`, so adversarially deep input fails
-   gracefully instead of exhausting the control stack.
+  `*maximum-parser-recursion-depth*`, so adversarially deep input fails
+  gracefully instead of exhausting the control stack. Bounded repetition is also
+  capped by `*maximum-parser-repetition-count*`, so hostile construction-time
+  bounds fail before allocating unbounded parser state and hostile
+  length-prefixed counts fail instead of looping.
 3. use `parse-tokens`, `parse-all`, or `parse-source` for end-to-end parsing
 4. move to `parse-pratt`, `parse-pratt-all`, or `parse-pratt-source`
    when expression precedence matters
@@ -570,14 +637,21 @@ the onboarding surface stays stable across both entry-point documents.
 End-to-end entry points intentionally stay small so combinator logic, Pratt
 logic, and tokenizer construction remain separable:
 
-- `parse-tokens` accepts a parser and a token vector, and does not require the
-  parse to consume every token
+- `run-parser` executes a parser at a position and returns four values:
+  `ok`, `value`, `next-position`, and either diagnostics (success) or a
+  parse failure (failure). Recursive parser execution is capped by
+  `*maximum-parser-recursion-depth*`; token stream length is capped by
+  `*maximum-parser-tokens*`
+- `parse-tokens` accepts a parser and a token stream, and does not require the
+  parse to consume every token; token stream length is capped by
+  `*maximum-parser-tokens*`
 - `parse-all` accepts a parser and a token vector, and enforces full
-  consumption
+  consumption; token stream length is capped by `*maximum-parser-tokens*`
 - `parse-source` tokenizes a source string with a tokenizer, then delegates to
   `parse-all`
-- `parse-pratt` parses a precedence expression from a token vector
+- `parse-pratt` parses a precedence expression from a token vector; token
+  stream length is capped by `*maximum-parser-tokens*`
 - `parse-pratt-all` parses a precedence expression and enforces full
-  consumption
+  consumption; token stream length is capped by `*maximum-parser-tokens*`
 - `parse-pratt-source` tokenizes a source string, then delegates to
   `parse-pratt-all`

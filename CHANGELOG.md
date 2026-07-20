@@ -4,6 +4,18 @@
 
 ## 0.1.0 - 2026-07-20
 
+- hardened parser entry points that accept caller-supplied token streams:
+  `*maximum-parser-tokens*` caps `run-parser`, `parse-tokens` / `parse-all`,
+  and `parse-pratt` / `parse-pratt-all`, returning a parse failure before
+  walking oversized caller-controlled token vectors or proper lists;
+  `filter-tokens` signals at the same limit, circular or improper token lists
+  are rejected before traversal, and `skip-until` now skips long recovery runs
+  iteratively instead of consuming control stack
+- added `*maximum-tree-depth*`, `*maximum-tree-nodes*`,
+  `tree-depth-limit-exceeded`, `tree-node-limit-exceeded`, and
+  `tree-child-list-invalid` so AST/CST traversal, conversion, comparison, and
+  rendering helpers fail explicitly on adversarially deep, wide, or malformed
+  external trees instead of exhausting the control stack or memory
 - added predicate token-run scanners: `take-while` / `take-while1` match a run of
   consecutive tokens satisfying a predicate (returning the list; `take-while1`
   requires at least one), and `skip-while` skips such a run discarding it —
@@ -27,15 +39,17 @@
   - `apply-fix-it` — return source with one fix-it's span region replaced by its
     replacement (a `nil` replacement deletes it); offsets are clamped to source
   - `apply-fixes` — apply a list of fix-its last-to-first, so each edit leaves
-    the not-yet-applied earlier offsets valid; pair with `diagnostic-fixes` to
-    auto-apply a diagnostic's suggestions
+    the not-yet-applied earlier offsets valid; same-position zero-width
+    insertions preserve input order; pair with `diagnostic-fixes` to auto-apply
+    a diagnostic's suggestions
 - rounded out the repetition/control combinators against Parsec/Megaparsec/nom/
   FParsec:
   - `some-till` — `many-till` requiring at least one match before the end parser
     (Megaparsec's `someTill`)
   - `length-count` — parse a count for N, then parse an item parser exactly N
-    times (nom's `length_count`); each item must consume input, so a hostile
-    count cannot force an unbounded loop
+    times (nom's `length_count`); N is capped by
+    `*maximum-parser-repetition-count*`, and each item must consume input, so a
+    hostile count cannot force an unbounded loop
   - `not-empty` — fail if a parser succeeds without consuming input, to guarantee
     forward progress (FParsec's `notEmpty`)
 - added opt-in packrat memoization and completed the token-matching family:
@@ -96,11 +110,13 @@
     parser's committed failure to a recoverable one so a surrounding
     `opt`/`many`/`sep-by` backtracks to the start position (Parsec's `try`)
   - permutation parsing: `permute` — parse a fixed set of parsers in any order,
-    each exactly once, returning their values in argument order
+    each exactly once, returning their values in argument order; its parser list
+    is capped by `*maximum-parser-repetition-count*`
   - value shaping: `pair` and `separated-pair` (nom-style two-parser sequences),
     plus `fold-many1` (the one-or-more form of `fold-many`)
   - negative token sets: `token-type-not-in` / `token-text-not-in`, the
-    complements of `token-type-in` / `token-text-in`
+    complements of `token-type-in` / `token-text-in`; all token set combinators
+    cap caller-supplied sets at `*maximum-parser-repetition-count*`
   - tokenizer rules: `make-radix-integer-rule` (base 2..36 with an optional
     case-insensitive prefix such as `0x`/`0b`/`0o`), `make-float-rule` (decimal
     exponents, e.g. `6.022e23`, with a clamped `*maximum-number-exponent*` guard),
@@ -161,15 +177,44 @@
   in `chainr1`'s own right-recursion), so deeply nested grammars return a
   `:maximum-recursion-depth` failure instead of exhausting the control stack
 - added tokenizer resource limits `*maximum-tokenizer-source-length*` and
-  `*maximum-tokenizer-tokens*`, which signal the exported
+  `*maximum-tokenizer-tokens*`, plus tokenizer rule-count and operator
+  alternative-count limits, which signal the exported
   `tokenizer-resource-limit-exceeded` condition instead of exhausting memory on
   an adversarially large or token-dense source
+- bounded computed parser-list construction in `choice`, `sequence-of`,
+  `seq-map`, `pick`, `permute`, token set combinators, and
+  `make-expression-parser`, and removed diagnostic merging through
+  `apply`/`append`, so attacker-influenced grammar inputs cannot expand into
+  unbounded argument lists
 - bounded numeric scanning with `*maximum-number-lexeme-length*` (default 1024)
   so a multi-million-digit run cannot force superlinear bignum work; excess
   digits gracefully start a new token
 - bounded diagnostic rendering with `*maximum-diagnostic-line-length*` (default
   400) so a single pathological source line (e.g. a minified file) cannot make
   one `diagnostic->string` call allocate proportional to that line's full length
+- bounded rendered diagnostic notes and fix-it hints with
+  `*maximum-diagnostic-related-count*` so externally constructed diagnostics
+  cannot force unbounded related-item rendering; circular or improper
+  related-item lists are rejected through the same condition
+- bounded `apply-fixes` input entries with `*maximum-diagnostic-fix-count*`,
+  including `nil` entries skipped during application, so circular or nil-only
+  fix batches terminate with `diagnostic-resource-limit-exceeded`; improper fix
+  lists are rejected through the same condition
+- bounded batched diagnostic rendering input entries, including `nil` entries
+  skipped for output, with `*maximum-diagnostic-count*` and parse-failure
+  expected/diagnostic payloads with
+  `*maximum-parse-failure-expected-count*` /
+  `*maximum-parse-failure-diagnostic-count*`; circular or improper batched
+  diagnostic and parse-failure payload lists are rejected through the same
+  resource-limit conditions
+- bounded `seq-map` function-call arity with `*maximum-parser-apply-arity*`,
+  removing an attacker-sized `apply` path
+- hardened release bootstrap dependency scanning to statically inspect ASD
+  metadata instead of loading dependency ASD files, and to reject component paths
+  that resolve outside their system source root
+- reduced avoidable allocation in `permute`, removed duplicate child-list
+  traversal from tree equality, and bucketed operator matching by leading
+  character
 - fixed `span-merge` to derive start/end line and column from whichever argument
   actually has the smallest start / largest end offset, so merging two spans out
   of source order no longer produces an internally inconsistent span

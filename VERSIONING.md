@@ -5,7 +5,7 @@ semantic versioning.
 
 ## Consumption Model
 
-- consume a tagged release, or a pinned commit on `main` if you need
+- consume a tagged release, or pin the exact commit on `main` if you need
   unreleased fixes
 - rerun `nix flake check` from that checkout before treating it as a
   supported baseline

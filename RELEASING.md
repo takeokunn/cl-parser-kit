@@ -8,7 +8,9 @@ below applies to every release, not only the first.
 Before cutting a public release:
 
 1. run `nix flake check` from a clean checkout to execute the full
-   reproducible CI gate (compile check, tests, coverage, and lint)
+   reproducible CI gate (compile check, tests, coverage, and lint); until the
+   first public release is cut, this repeatable CI path remains the release
+   readiness gate
 2. run `./scripts/run-release-audit.sh` from the same checkout
 3. rerun `sbcl --script scripts/run-compile-check.lisp` to prove both shipped
    ASD systems still compile from a raw checkout

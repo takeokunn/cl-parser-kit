@@ -827,8 +827,39 @@ The tokenizer and parser are designed to process untrusted source text. Several
 exported specials bound the work any single call can perform, so hostile input
 fails gracefully instead of exhausting memory or the control stack:
 `*maximum-tokenizer-source-length*`, `*maximum-tokenizer-tokens*`,
+`*maximum-tokenizer-rules*`, `*maximum-tokenizer-rule-alternatives*`,
 `*maximum-number-lexeme-length*`, `*maximum-parser-recursion-depth*`,
-`*maximum-pratt-recursion-depth*`, and `*maximum-diagnostic-line-length*`.
+`*maximum-parser-tokens*`, `*maximum-parser-repetition-count*`,
+`*maximum-parser-apply-arity*`, `*maximum-pratt-recursion-depth*`,
+`*maximum-tree-depth*`, `*maximum-tree-nodes*`,
+`*maximum-diagnostic-line-length*`, `*maximum-diagnostic-count*`,
+`*maximum-diagnostic-related-count*`, `*maximum-diagnostic-fix-count*`,
+`*maximum-parse-failure-expected-count*`, and
+`*maximum-parse-failure-diagnostic-count*`.
+`*maximum-parser-tokens*` applies to public boundaries that accept an external
+token stream, including `run-parser`, `filter-tokens`, `parse-tokens` /
+`parse-all`, and `parse-pratt` / `parse-pratt-all`; circular or improper token
+lists are rejected before traversal.
+`*maximum-parser-repetition-count*` applies to bounded repetition, including
+construction-time bounds such as `times` / `times-between` and length-prefixed
+counts read by `length-count`, plus computed parser lists such as `choice`,
+`sequence-of`, `seq-map`, `pick`, `permute`, token set combinators, and
+`make-expression-parser` operator tables.
+`*maximum-parser-apply-arity*` separately caps `seq-map`'s final call arity.
+`*maximum-tree-depth*` and `*maximum-tree-nodes*` apply to AST/CST traversal,
+conversion, comparison, and rendering helpers that may receive externally
+constructed trees; malformed or circular tree child lists signal
+`tree-child-list-invalid`. `*maximum-diagnostic-related-count*` caps rendered
+diagnostic notes and fix-it hints from externally constructed diagnostics;
+circular or improper related-item lists are rejected through the same condition.
+`*maximum-diagnostic-fix-count*` caps input entries consumed by `apply-fixes`,
+including `nil` entries skipped during application; circular or improper fix
+lists are rejected through the same condition.
+`*maximum-diagnostic-count*` caps batched diagnostic input entries, including
+`nil` entries skipped for output; circular or improper batched diagnostic lists
+are rejected through the same condition. The parse failure limits cap externally
+constructed or highly ambiguous failure payloads and reject circular or improper
+payload lists.
 Rebind or `setf` them for intentionally large legitimate inputs; the tokenizer
 limits signal `tokenizer-resource-limit-exceeded`. See [`API.md`](./API.md) for
 details.
