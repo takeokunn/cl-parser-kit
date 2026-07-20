@@ -1,6 +1,6 @@
 (asdf:defsystem "cl-parser-kit"
   :description "Small parser toolkit for Common Lisp text languages."
-  :version "0.1.0"
+  :version "0.2.0"
   :author "takeokunn"
   :license "MIT"
   :homepage "https://github.com/takeokunn/cl-parser-kit"
