@@ -144,16 +144,19 @@ SETF to raise it for intentionally large or deep expressions.")
 
 (defun parse-pratt (tokens table &key (position 0) (min-binding-power 0))
   "Parse an expression from TOKENS using TABLE."
-  (let ((stream (ensure-vector tokens)))
-    (%pratt-parse/cps
-     stream
-     table
-     position
-     min-binding-power
-     (lambda (value next diagnostics)
-       (%success value next diagnostics))
-     (lambda (next failure)
-       (values nil nil next failure)))))
+  (multiple-value-bind (stream limit-failure)
+      (%ensure-parser-token-vector tokens)
+    (if limit-failure
+        (values nil nil 0 limit-failure)
+        (%pratt-parse/cps
+         stream
+         table
+         position
+         min-binding-power
+         (lambda (value next diagnostics)
+           (%success value next diagnostics))
+         (lambda (next failure)
+           (values nil nil next failure))))))
 
 (defun parse-pratt-all (tokens table &key (position 0) (min-binding-power 0))
   (%parse-with-full-consumption (tokens)

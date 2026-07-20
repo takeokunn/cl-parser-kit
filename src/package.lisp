@@ -101,6 +101,9 @@
    #:parser-fn
    #:run-parser
    #:*maximum-parser-recursion-depth*
+   #:*maximum-parser-tokens*
+   #:*maximum-parser-repetition-count*
+   #:*maximum-parser-apply-arity*
    #:parse-source
    #:parse-tokens
    #:parse-all

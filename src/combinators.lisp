@@ -29,6 +29,10 @@ stack. Rebind or SETF to raise it for intentionally deep grammars or inputs.")
 (defvar *parser-recursion-depth* 0
   "Current combinator recursion depth; bound dynamically during a parse.")
 
+(defparameter *maximum-parser-repetition-count* 1000000
+  "Maximum bounded repetition or computed parser-list count accepted by parser
+combinators.")
+
 (defun %recursion-depth-exceeded-failure (position)
   (make-parse-failure
    :position position
@@ -38,20 +42,57 @@ stack. Rebind or SETF to raise it for intentionally deep grammars or inputs.")
                        (format nil "Maximum parser recursion depth ~D exceeded"
                                *maximum-parser-recursion-depth*)))))
 
+(defun %parser-token-limit-failure (token-count &optional (position 0))
+  (make-parse-failure
+   :position position
+   :expected :maximum-parser-tokens
+   :actual token-count
+   :diagnostics (list (error-diagnostic
+                       (format nil "Parser token count ~D exceeds maximum ~D"
+                               token-count
+                               *maximum-parser-tokens*)))))
+
+(defun %parser-token-limit-failure-if-needed (tokens &optional (position 0))
+  (let ((token-count (length tokens)))
+    (and (> token-count *maximum-parser-tokens*)
+         (%parser-token-limit-failure token-count position))))
+
+(defun %ensure-parser-token-vector (tokens &optional (position 0))
+  (multiple-value-bind (stream token-count too-many-p)
+      (ensure-vector-up-to tokens *maximum-parser-tokens*)
+    (if too-many-p
+        (values nil (%parser-token-limit-failure token-count position))
+        (values stream nil))))
+
 (defun run-parser (parser input position)
-  (if (>= *parser-recursion-depth* *maximum-parser-recursion-depth*)
-      (values nil nil position (%recursion-depth-exceeded-failure position))
-      (let ((*parser-recursion-depth* (1+ *parser-recursion-depth*)))
-        (funcall (parser-fn parser) input position))))
+  (multiple-value-bind (stream limit-failure)
+      (%ensure-parser-token-vector input position)
+    (cond
+      (limit-failure
+       (values nil nil position limit-failure))
+      ((>= *parser-recursion-depth* *maximum-parser-recursion-depth*)
+       (values nil nil position (%recursion-depth-exceeded-failure position)))
+      (t
+       (let ((*parser-recursion-depth* (1+ *parser-recursion-depth*)))
+         (funcall (parser-fn parser) stream position))))))
 
 (defun %success (value position &optional diagnostics)
   (values t value position diagnostics))
 
 (defun %merge-diagnostics (&rest diagnostics-lists)
-  ;; The success path carries no diagnostics the vast majority of the time, so
-  ;; skip the mapcar/append allocation entirely when every argument is empty.
-  (when (some #'identity diagnostics-lists)
-    (apply #'append (mapcar #'ensure-list diagnostics-lists))))
+  ;; Avoid APPLY/APPEND over an attacker-influenced number of diagnostic groups;
+  ;; accumulate explicitly so merging stays linear in emitted diagnostics.
+  (let ((merged nil)
+        (count 0))
+    (dolist (diagnostics diagnostics-lists (nreverse merged))
+      (dolist (diagnostic
+               (%ensure-parse-failure-list-count
+                :diagnostics diagnostics *maximum-parse-failure-diagnostic-count*))
+        (incf count)
+        (when (> count *maximum-parse-failure-diagnostic-count*)
+          (%parse-failure-resource-limit
+           :diagnostics count *maximum-parse-failure-diagnostic-count*))
+        (push diagnostic merged)))))
 
 (defun %failure (position expected &optional actual diagnostics committed-p)
   (values nil

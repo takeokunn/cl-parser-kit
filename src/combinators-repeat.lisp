@@ -9,16 +9,39 @@
 ;;;; recovery rule (%RECOVERABLE-SUCCESS: stop on recoverable failure, propagate
 ;;;; a committed one) -- but without consing an intermediate result list.
 
+(defun %check-parser-repetition-count (name count)
+  (when (> count *maximum-parser-repetition-count*)
+    (error "~A count ~D exceeds *MAXIMUM-PARSER-REPETITION-COUNT* (~D)"
+           name count *maximum-parser-repetition-count*)))
+
 (defun times (count parser)
   "Parse PARSER exactly COUNT times, returning a list of the COUNT results.
 
 COUNT must be a non-negative integer. As soon as one repetition fails the whole
 parser fails, committed iff any input was already consumed (SEQ's semantics).
+Each successful repetition must consume input, matching MANY's progress guard.
 COUNT of 0 succeeds immediately consuming nothing and yielding NIL."
   (check-type count (integer 0))
-  (if (zerop count)
-      (return-parser '())
-      (apply #'seq (make-list count :initial-element parser))))
+  (%check-parser-repetition-count "TIMES" count)
+  (make-parser
+   :name :times
+   :fn (lambda (input position)
+         (let ((current position)
+               (results '())
+               (diagnostics '()))
+           (block done
+             (loop repeat count
+                   do (%run-progressing-parser/cps
+                       parser input current
+                       (lambda (value next result)
+                         (push value results)
+                         (setf current next
+                               diagnostics (%merge-diagnostics diagnostics result)))
+                       (lambda (failure)
+                         (if (= current position)
+                             (return-from done (%failure-from failure))
+                             (return-from done (%committed-failure-from failure))))))
+             (%success (nreverse results) current diagnostics))))))
 
 (define-parser-function skip-many (parser) :skip-many
   "Parse PARSER zero or more times, discarding every result, yielding T.
@@ -145,25 +168,22 @@ least once. Megaparsec's `someTill`, the non-empty companion of MANY-TILL."
   (make-parser
    :name :length-count
    :fn (lambda (input position)
-         (labels ((recur (remaining current values diagnostics)
-                    (if (zerop remaining)
-                        (%success (nreverse values) current diagnostics)
-                        ;; %RUN-PROGRESSING-PARSER/CPS rejects a non-advancing
-                        ;; item, so a hostile COUNT cannot loop forever on a
-                        ;; zero-width match -- each of the COUNT iterations must
-                        ;; consume input, bounding the work by the token stream.
-                        (%run-progressing-parser/cps
-                         item-parser input current
-                         (lambda (value next result)
-                           (recur (1- remaining)
-                                  next
-                                  (cons value values)
-                                  (%merge-diagnostics diagnostics result)))
-                         (lambda (failure)
-                           (if (= current position)
-                               (%failure-from failure)
-                               (%committed-failure-from failure)))))))
-           (recur count position '() '())))))
+         (let ((current position)
+               (values '())
+               (diagnostics '()))
+           (block done
+             (loop repeat count
+                   do (%run-progressing-parser/cps
+                       item-parser input current
+                       (lambda (value next result)
+                         (push value values)
+                         (setf current next
+                               diagnostics (%merge-diagnostics diagnostics result)))
+                       (lambda (failure)
+                         (if (= current position)
+                             (return-from done (%failure-from failure))
+                             (return-from done (%committed-failure-from failure))))))
+             (%success (nreverse values) current diagnostics))))))
 
 (defun length-count (count-parser item-parser)
   "Parse COUNT-PARSER for a non-negative integer N, then parse ITEM-PARSER exactly
@@ -171,13 +191,19 @@ N times, returning the list of N item values.
 
 For length-prefixed sequences such as `3 a b c`. nom's `length_count`. A count
 that is not a non-negative integer fails the parse (rather than signalling); each
-item must consume input, so a hostile count cannot force an unbounded loop."
+item must consume input, and counts above *MAXIMUM-PARSER-REPETITION-COUNT* fail
+the parse, so a hostile count cannot force an unbounded loop."
   (bind-parser count-parser
                (lambda (count)
-                 (if (and (integerp count) (>= count 0))
-                     (%length-counted count item-parser)
-                     (fail-parser "length-count expected a non-negative integer count"
-                                  :expected :length-count)))))
+                 (cond
+                   ((not (and (integerp count) (>= count 0)))
+                    (fail-parser "length-count expected a non-negative integer count"
+                                 :expected :length-count))
+                   ((> count *maximum-parser-repetition-count*)
+                    (fail-parser "length-count count exceeds maximum parser repetition count"
+                                 :expected :length-count))
+                   (t
+                    (%length-counted count item-parser))))))
 
 (defun chainl (parser operator default)
   "Like CHAINL1 but succeeds with DEFAULT (consuming nothing) when PARSER does
@@ -200,6 +226,7 @@ failure always propagates. MIN and MAX are non-negative integers with MIN <= MAX
   (check-type max (integer 0))
   (assert (<= min max) (min max)
           "TIMES-BETWEEN requires MIN (~D) <= MAX (~D)" min max)
+  (%check-parser-repetition-count "TIMES-BETWEEN" max)
   (make-parser
    :name :times-between
    :fn (lambda (input position)

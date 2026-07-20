@@ -17,16 +17,20 @@ With :INCLUDING true the matching token is also consumed. This is the primitive
 resynchronisation step: skip the wreckage up to the next statement terminator or
 closing bracket, then resume the grammar."
   (let ((tokens (ensure-vector input)))
-    (labels ((recur (current skipped)
-               (if (>= current (length tokens))
-                   (%success (nreverse skipped) current)
-                   (let ((token (aref tokens current)))
-                     (if (funcall predicate token)
-                         (if including
-                             (%success (nreverse (cons token skipped)) (1+ current))
-                             (%success (nreverse skipped) current))
-                         (recur (1+ current) (cons token skipped)))))))
-      (recur position '()))))
+    (let ((limit (length tokens))
+          (current position)
+          (skipped '()))
+      (loop
+        (when (>= current limit)
+          (return (%success (nreverse skipped) current)))
+        (let ((token (aref tokens current)))
+          (when (funcall predicate token)
+            (return
+              (if including
+                  (%success (nreverse (cons token skipped)) (1+ current))
+                  (%success (nreverse skipped) current))))
+          (push token skipped)
+          (incf current))))))
 
 (define-parser-function recover (parser recovery) :recover
   "Run PARSER; on failure, run RECOVERY from the failure position and take its

@@ -38,6 +38,31 @@
       (expect next :to-equal 0)
       (expect value :to-be-falsy))))
 
+(it-sequential "combinator-times-rejects-non-advancing-parser-test"
+  (let ((parser (times 2 (return-parser :ok))))
+    (assert-combinator-values (parse-tokens parser #())
+        (ok value next failure)
+      (expect ok :to-be-falsy)
+      (expect value :to-be-falsy)
+      (expect next :to-equal 0)
+      (expect (parse-failure-expected failure) :to-equal :progressing-parser)
+      (expect (parser-name (parse-failure-actual failure)) :to-equal :return))))
+
+(it-sequential "combinator-times-rejects-excessive-count-test"
+  (let ((*maximum-parser-repetition-count* 2))
+    (expect (lambda () (times 3 (type-token-value :number))) :to-throw 'error)))
+
+(it-sequential "combinator-times-handles-large-fixed-count-iteratively-test"
+  (let* ((count 2048)
+         (tokens (make-array count :initial-element (make-token :type :number
+                                                                :text "1"
+                                                                :value 1)))
+         (parser (times count (type-token-value :number))))
+    (assert-combinator-success (parse-tokens parser tokens)
+        (value next failure)
+      (expect next :to-equal count)
+      (expect (length value) :to-equal count))))
+
 ;;; SKIP-MANY / SKIP-MANY1 ----------------------------------------------------
 
 (it-sequential "combinator-skip-many-discards-and-returns-t-test"
@@ -169,6 +194,34 @@
       (assert-combinator-failure (parse-tokens parser tokens)
           (value next failure)
         (expect failure :to-be-truthy)))))
+
+(it-sequential "combinator-length-count-fails-when-count-exceeds-limit-test"
+  (let ((*maximum-parser-repetition-count* 2)
+        (tokens (vector (make-token :type :number :text "3" :value 3))))
+    (let ((parser (length-count (type-token-value :number)
+                                (type-token-text :identifier))))
+      (assert-combinator-failure (parse-tokens parser tokens)
+          (value next failure)
+        (expect next :to-equal 1)
+        (expect (parse-failure-expected failure) :to-equal :length-count)))))
+
+(it-sequential "combinator-length-count-handles-large-count-iteratively-test"
+  (let* ((count 2048)
+         (tokens (make-array (1+ count))))
+    (setf (aref tokens 0) (make-token :type :number
+                                      :text (princ-to-string count)
+                                      :value count))
+    (loop for index from 1 to count
+          do (setf (aref tokens index)
+                   (make-token :type :identifier
+                               :text "a"
+                               :value "a")))
+    (let ((parser (length-count (type-token-value :number)
+                                (type-token-text :identifier))))
+      (assert-combinator-success (parse-tokens parser tokens)
+          (value next failure)
+        (expect next :to-equal (1+ count))
+        (expect (length value) :to-equal count)))))
 
 ;;; END-BY / END-BY1 ----------------------------------------------------------
 
@@ -361,6 +414,11 @@
           (value next failure)
         (expect (parse-failure-committed-p failure) :to-be-truthy)
         (expect (parse-failure-expected failure) :to-equal :identifier)))))
+
+(it-sequential "combinator-times-between-rejects-excessive-max-test"
+  (let ((*maximum-parser-repetition-count* 2))
+    (expect (lambda () (times-between 0 3 (type-token :identifier)))
+            :to-throw 'error)))
 
 (it-sequential "combinator-times-between-below-min-without-progress-is-recoverable-test"
   ;; Zero matches when MIN is 1: the failure did not consume input, so it stays

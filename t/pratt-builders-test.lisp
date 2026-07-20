@@ -19,6 +19,28 @@
       (value next failure)
     (expect value :to-equal 7)))
 
+(it-sequential "pratt-entry-points-enforce-token-count-limit-test"
+  (let ((*maximum-parser-tokens* 2))
+    (multiple-value-bind (ok value next failure)
+        (parse-pratt-all (vector (%num 1) (%op :plus "+") (%num 2))
+                         (%builders-table))
+      (declare (ignore value))
+      (expect ok :to-be-falsy)
+      (expect next :to-equal 0)
+      (expect (parse-failure-expected failure) :to-equal :maximum-parser-tokens)
+      (expect (parse-failure-actual failure) :to-equal 3))))
+
+(it-sequential "pratt-entry-points-stop-list-coercion-at-token-count-limit-test"
+  (let ((*maximum-parser-tokens* 2))
+    (multiple-value-bind (ok value next failure)
+        (parse-pratt-all (list (%num 1) (%op :plus "+") (%num 2))
+                         (%builders-table))
+      (declare (ignore value))
+      (expect ok :to-be-falsy)
+      (expect next :to-equal 0)
+      (expect (parse-failure-expected failure) :to-equal :maximum-parser-tokens)
+      (expect (parse-failure-actual failure) :to-equal 3))))
+
 (it-sequential "pratt-register-infix-left-associates-test"
   ;; 1 + 2 + 3 -> ((1 + 2) + 3); addition is associative so check the shape via
   ;; a non-commutative check is unnecessary -- the sum is 6 either way, and the

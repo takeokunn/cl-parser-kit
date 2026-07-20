@@ -33,6 +33,17 @@
         (expect next :to-equal 2)
         (expect (length value) :to-equal 2)))))
 
+(it-sequential "combinator-skip-until-handles-long-runs-iteratively-test"
+  (let* ((*maximum-parser-tokens* 6000)
+         (tokens (make-array 5000
+                             :initial-element (make-token :type :identifier
+                                                          :text "a")))
+         (parser (skip-until #'%semicolon-token-p)))
+    (assert-combinator-success (parse-tokens parser tokens)
+        (value next failure)
+      (expect next :to-equal 5000)
+      (expect (length value) :to-equal 5000))))
+
 ;;; RECOVER -------------------------------------------------------------------
 
 (it-sequential "combinator-recover-passes-success-through-test"

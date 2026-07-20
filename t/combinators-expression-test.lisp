@@ -89,6 +89,24 @@
                                      (list :infix-right (operator-parser (literal "^") #'expt)))))))
           :to-be-truthy))
 
+(it-sequential "expression-parser-rejects-excessive-table-test"
+  (let ((*maximum-parser-repetition-count* 1))
+    (expect (lambda ()
+              (make-expression-parser
+               (type-token-value :number)
+               (list (list (list :infix-left (operator-parser (literal "+") #'+)))
+                     (list (list :infix-left (operator-parser (literal "-") #'-))))))
+            :to-throw 'error)))
+
+(it-sequential "expression-parser-rejects-excessive-level-test"
+  (let ((*maximum-parser-repetition-count* 1))
+    (expect (lambda ()
+              (make-expression-parser
+               (type-token-value :number)
+               (list (list (list :infix-left (operator-parser (literal "+") #'+))
+                           (list :infix-left (operator-parser (literal "-") #'-))))))
+            :to-throw 'error)))
+
 ;;; SEQUENCE-OF ---------------------------------------------------------------
 
 (it-sequential "combinator-sequence-of-runs-list-in-order-test"

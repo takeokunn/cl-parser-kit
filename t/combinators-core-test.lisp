@@ -133,6 +133,28 @@
                                             "Unexpected trailing token"
                                             "1:4-1:5"))))
 
+(it-sequential "merge-diagnostics-rejects-circular-success-diagnostic-list-test"
+  (let ((*maximum-parse-failure-diagnostic-count* 1)
+        (diagnostics (list (note-diagnostic "one"))))
+    (setf (cdr diagnostics) diagnostics)
+    (expect (lambda ()
+              (cl-parser-kit::%merge-diagnostics diagnostics))
+            :to-throw 'parse-failure-resource-limit-exceeded)))
+
+(it-sequential "merge-diagnostics-rejects-improper-success-diagnostic-list-test"
+  (let ((diagnostics (cons (note-diagnostic "one") :tail)))
+    (expect (lambda ()
+              (cl-parser-kit::%merge-diagnostics diagnostics))
+            :to-throw 'parse-failure-resource-limit-exceeded)))
+
+(it-sequential "merge-diagnostics-enforces-aggregate-success-diagnostic-limit-test"
+  (let ((*maximum-parse-failure-diagnostic-count* 1))
+    (expect (lambda ()
+              (cl-parser-kit::%merge-diagnostics
+               (list (note-diagnostic "one"))
+               (list (note-diagnostic "two"))))
+            :to-throw 'parse-failure-resource-limit-exceeded)))
+
 (it-sequential "combinator-many1-test"
   (with-combinator-tokens (tokens '((:type :identifier :text "foo")
                                     (:type :identifier :text "bar")))

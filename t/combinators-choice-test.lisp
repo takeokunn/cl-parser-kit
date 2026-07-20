@@ -18,6 +18,16 @@
           (value next failure)
         (expect (parse-failure-expected failure) :to-equal :alternative)))))
 
+(it-sequential "combinator-choice-rejects-excessive-computed-list-test"
+  (let ((*maximum-parser-repetition-count* 1))
+    (expect (lambda () (choice (list (type-token :plus) (type-token :identifier))))
+            :to-throw 'error)))
+
+(it-sequential "combinator-sequence-of-rejects-excessive-computed-list-test"
+  (let ((*maximum-parser-repetition-count* 1))
+    (expect (lambda () (sequence-of (list (type-token :plus) (type-token :identifier))))
+            :to-throw 'error)))
+
 ;;; OPTION --------------------------------------------------------------------
 
 (it-sequential "combinator-option-returns-default-when-absent-test"

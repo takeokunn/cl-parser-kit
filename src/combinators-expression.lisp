@@ -12,14 +12,18 @@
 
 (defun %expression-ops-of-kind (level kind)
   "The op-parsers in LEVEL tagged KIND, in order."
-  (loop for spec in level
+  (loop for spec across (%ensure-parser-list-vector
+                         "MAKE-EXPRESSION-PARSER precedence level"
+                         level)
         when (eq (first spec) kind)
         collect (second spec)))
 
 (defun %expression-choice (op-parsers)
   "ALT over OP-PARSERS, or NIL when the list is empty."
-  (when op-parsers
-    (apply #'alt op-parsers)))
+  (let ((ops (%ensure-parser-list-vector "MAKE-EXPRESSION-PARSER operator set"
+                                         op-parsers)))
+    (unless (zerop (length ops))
+      (choice ops))))
 
 (defun %expression-factor (base prefix-op postfix-op)
   "BASE wrapped in zero or more PREFIX-OP functions (applied right-to-left, so the
@@ -94,4 +98,9 @@ Example -- the usual four-function arithmetic with unary minus:
 This is the combinator-layer counterpart to the Pratt parser: reach for Pratt
 when dispatching on single token types, and for MAKE-EXPRESSION-PARSER when the
 operands and operators are arbitrary parsers."
-  (reduce #'%expression-level table :initial-value term))
+  (let ((levels (%ensure-parser-list-vector "MAKE-EXPRESSION-PARSER table"
+                                            table))
+        (parser term))
+    (loop for level across levels
+          do (setf parser (%expression-level parser level))
+          finally (return parser))))

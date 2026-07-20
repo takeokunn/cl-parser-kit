@@ -45,8 +45,9 @@ failure and rendered by `parse-failure->string`."
              next
              (%copy-parse-failure
               failure
-              :diagnostics (append (ensure-list (parse-failure-diagnostics failure))
-                                   (list (note-diagnostic note))))))))
+              :diagnostics (%append-parse-failure-diagnostic
+                            (parse-failure-diagnostics failure)
+                            (note-diagnostic note)))))))
 
 (define-parser-function verify (parser predicate &key (expected-name :verify)) expected-name
   "Run PARSER, then require its value to satisfy PREDICATE.

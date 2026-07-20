@@ -2,10 +2,17 @@
 
 ;;;; Choice and value-shaping combinators.
 ;;;;
-;;;; These are thin, commit-preserving wrappers over the primitives in
-;;;; COMBINATORS.LISP / COMBINATORS-SEQUENCE.LISP. They intentionally avoid
-;;;; hand-rolled CPS so they inherit the already-verified committed-p semantics
-;;;; (recoverable failure -> backtrack; committed failure -> propagate).
+;;;; These mirror the primitives in COMBINATORS.LISP / COMBINATORS-SEQUENCE.LISP
+;;;; without APPLY, so computed parser lists cannot trip implementation argument
+;;;; limits or traverse circular lists forever at construction time.
+
+(defun %ensure-parser-list-vector (name parsers)
+  (multiple-value-bind (stream parser-count too-many-p)
+      (ensure-vector-up-to parsers *maximum-parser-repetition-count*)
+    (when too-many-p
+      (error "~A parser count ~D exceeds *MAXIMUM-PARSER-REPETITION-COUNT* (~D)"
+             name parser-count *maximum-parser-repetition-count*))
+    stream))
 
 (defun choice (parsers)
   "Ordered choice over a LIST of parsers -- the list form of ALT.
@@ -14,7 +21,22 @@ Tries each parser in PARSERS in order at the same position, returning the first
 success. On total failure the farthest (best) failure is reported, exactly as
 ALT does. (CHOICE (LIST A B C)) is equivalent to (ALT A B C); prefer CHOICE
 when the alternatives are computed at runtime."
-  (apply #'alt parsers))
+  (let ((branches (%ensure-parser-list-vector "CHOICE" parsers)))
+    (make-parser
+     :name :alt
+     :fn (lambda (input position)
+           (block alt
+             (if (zerop (length branches))
+                 (%failure position :alternative nil)
+                 (let ((best-failure nil))
+                   (loop for parser across branches
+                         do (multiple-value-bind (ok value next result)
+                                (run-parser parser input position)
+                              (when ok
+                                (return-from alt (%success value next result)))
+                              (setf best-failure
+                                    (merge-parse-failures best-failure result))))
+                   (%failure-from best-failure))))))))
 
 (defun sequence-of (parsers)
   "Run PARSERS (a LIST) in sequence, returning the list of their values.
@@ -22,7 +44,29 @@ when the alternatives are computed at runtime."
 The list form of SEQ, exactly as CHOICE is the list form of ALT: prefer it when
 the sequence of sub-parsers is computed at runtime. (SEQUENCE-OF (LIST A B C)) is
 equivalent to (SEQ A B C), inheriting SEQ's commitment semantics."
-  (apply #'seq parsers))
+  (let ((items (%ensure-parser-list-vector "SEQUENCE-OF" parsers)))
+    (make-parser
+     :name :seq
+     :fn (lambda (input position)
+           (block seq
+             (let ((values '())
+                   (current position)
+                   (diagnostics '())
+                   (best-failure nil))
+               (loop for parser across items
+                     do (multiple-value-bind (ok value next result)
+                            (run-parser parser input current)
+                          (unless ok
+                            (setf best-failure
+                                  (merge-parse-failures best-failure result))
+                            (return-from seq
+                              (if (= current position)
+                                  (%failure-from best-failure)
+                                  (%committed-failure-from best-failure))))
+                          (push value values)
+                          (setf diagnostics (%merge-diagnostics diagnostics result))
+                          (setf current next)))
+               (%success (nreverse values) current diagnostics)))))))
 
 (define-parser-function option (default parser) :option
   ;; Reuse OPT's exact recoverable machinery, only substituting DEFAULT for

@@ -31,41 +31,41 @@ matches the three attributes however they are arranged in the source and always
 returns (name id class). A committed failure inside any element propagates; a
 recoverable failure lets the other elements be tried first. Fails if any element
 never matches. See ATTEMPT for disambiguating elements with overlapping starts."
-  (let ((count (length parsers)))
+  (let* ((items (%ensure-parser-list-vector "PERMUTE" parsers))
+         (count (length items)))
     (make-parser
      :name :permute
      :fn (lambda (input position)
-           (let ((results (make-array count :initial-element nil)))
-             (labels ((next-round (current remaining diagnostics)
-                        (if (null remaining)
+           (let ((results (make-array count :initial-element nil))
+                 (active (make-array count :initial-element t)))
+             (labels ((next-round (current remaining-count diagnostics)
+                        (if (zerop remaining-count)
                             (%success (coerce results 'list) current diagnostics)
-                            (try-candidates current remaining remaining diagnostics nil)))
-                      (try-candidates (current remaining candidates diagnostics best-failure)
-                        (if (null candidates)
+                            (try-candidates current remaining-count 0 diagnostics nil)))
+                      (try-candidates (current remaining-count index diagnostics best-failure)
+                        (if (= index count)
                             ;; No remaining element matched at CURRENT: a required
                             ;; element is missing. Report the farthest miss.
                             (%failure-from
                              (or best-failure
                                  (%make-parse-failure current :permutation nil nil nil)))
-                            (let* ((candidate (first candidates))
-                                   (index (car candidate))
-                                   (parser (cdr candidate)))
+                            (if (not (aref active index))
+                                (try-candidates current remaining-count (1+ index)
+                                                diagnostics best-failure)
+                                (let ((parser (aref items index)))
                               (multiple-value-bind (ok value next result)
                                   (run-parser parser input current)
                                 (cond
                                   (ok
                                    (setf (aref results index) value)
+                                   (setf (aref active index) nil)
                                    (next-round next
-                                               (remove candidate remaining :test #'eq)
+                                               (1- remaining-count)
                                                (%merge-diagnostics diagnostics result)))
                                   ((parse-failure-committed-p result)
                                    (%committed-failure-from result))
                                   (t
-                                   (try-candidates current remaining (rest candidates)
+                                   (try-candidates current remaining-count (1+ index)
                                                    diagnostics
-                                                   (merge-parse-failures best-failure result)))))))))
-               (next-round position
-                           (loop for i from 0
-                                 for parser in parsers
-                                 collect (cons i parser))
-                           '())))))))
+                                                   (merge-parse-failures best-failure result))))))))))
+               (next-round position count '())))))))

@@ -112,6 +112,18 @@
           (value next failure)
         (expect (parse-failure-expected failure) :to-equal '(:not 1 2 3))))))
 
+(it-sequential "combinator-token-set-combinators-reject-excessive-value-list-test"
+  (let ((*maximum-parser-repetition-count* 2))
+    (dolist (constructor (list #'token-type-in
+                               #'token-type-not-in
+                               #'token-text-in
+                               #'token-text-not-in
+                               #'token-value-in
+                               #'token-value-not-in))
+      (expect (lambda ()
+                (apply constructor (list :a :b :c)))
+              :to-throw 'error))))
+
 ;;; TAKE-WHILE / TAKE-WHILE1 / SKIP-WHILE -------------------------------------
 
 (it-sequential "combinator-take-while-collects-run-test"

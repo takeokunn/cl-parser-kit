@@ -23,6 +23,16 @@
       (expect (parse-failure-committed-p failure) :to-be-truthy)
       (expect (parse-failure-expected failure) :to-equal :number))))
 
+(it-sequential "combinator-seq-map-rejects-excessive-parser-list-test"
+  (let ((*maximum-parser-repetition-count* 1))
+    (expect (lambda () (seq-map #'list (type-token :plus) (type-token :number)))
+            :to-throw 'error)))
+
+(it-sequential "combinator-seq-map-rejects-excessive-apply-arity-test"
+  (let ((*maximum-parser-apply-arity* 1))
+    (expect (lambda () (seq-map #'list (type-token :plus) (type-token :number)))
+            :to-throw 'error)))
+
 ;;; PAIR ----------------------------------------------------------------------
 
 (it-sequential "combinator-pair-returns-both-results-test"
@@ -66,6 +76,11 @@
           (value next failure)
         (expect next :to-equal 3)
         (expect (token-text value) :to-equal "body")))))
+
+(it-sequential "combinator-pick-rejects-excessive-parser-list-test"
+  (let ((*maximum-parser-repetition-count* 1))
+    (expect (lambda () (pick 0 (type-token :plus) (type-token :number)))
+            :to-throw 'error)))
 
 ;;; SURROUNDED-BY -------------------------------------------------------------
 

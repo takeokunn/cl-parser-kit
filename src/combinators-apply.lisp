@@ -8,6 +8,16 @@
 ;;;; most needed when building AST/CST nodes that must remember their source
 ;;;; location.
 
+(defparameter *maximum-parser-apply-arity* 256
+  "Maximum number of positional values SEQ-MAP expands into one function call.
+Use SEQUENCE-OF for large computed parser lists that should return one list
+instead of being passed as implementation-level call arguments.")
+
+(defun %check-parser-apply-arity (name count)
+  (when (> count *maximum-parser-apply-arity*)
+    (error "~A arity ~D exceeds *MAXIMUM-PARSER-APPLY-ARITY* (~D)"
+           name count *maximum-parser-apply-arity*)))
+
 (defun seq-map (function &rest parsers)
   "Run PARSERS in sequence (SEQ) and apply FUNCTION to their results as separate
 positional arguments.
@@ -16,7 +26,8 @@ positional arguments.
 (MAKE-NODE VA VB VC). This is the applicative lift over SEQ and the idiomatic
 way to combine a fixed number of sub-parsers into one value without manually
 pulling the pieces out of SEQ's list."
-  (map-parser (apply #'seq parsers)
+  (%check-parser-apply-arity "SEQ-MAP" (length parsers))
+  (map-parser (sequence-of parsers)
               (lambda (values)
                 (apply function values))))
 
@@ -26,7 +37,7 @@ pulling the pieces out of SEQ's list."
 A concise way to parse surrounding syntax while retaining a single meaningful
 value, e.g. (PICK 1 OPEN BODY CLOSE) keeps BODY. INDEX must be within range of
 PARSERS."
-  (map-parser (apply #'seq parsers)
+  (map-parser (sequence-of parsers)
               (lambda (values)
                 (nth index values))))
 
