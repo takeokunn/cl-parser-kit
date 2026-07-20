@@ -1,6 +1,6 @@
 (asdf:defsystem "cl-parser-kit-test"
   :description "Tests for cl-parser-kit."
-  :version "0.1.0"
+  :version "0.2.0"
   :author "takeokunn"
   :license "MIT"
   :homepage "https://github.com/takeokunn/cl-parser-kit"
