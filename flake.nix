@@ -4,15 +4,15 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     cl-weave = {
-      url = "github:takeokunn/cl-weave/v0.8.0";
+      url = "github:nerima-lisp/cl-weave/v0.10.0";
       flake = false;
     };
     cl-prolog = {
-      url = "github:takeokunn/cl-prolog/v0.6.0";
+      url = "github:nerima-lisp/cl-prolog/v0.7.0";
       flake = false;
     };
     paredit-cli = {
-      url = "github:takeokunn/paredit-cli";
+      url = "github:nerima-lisp/paredit-cli";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
@@ -68,7 +68,7 @@
           '';
           meta = {
             description = "Small parser toolkit for Common Lisp text languages";
-            homepage = "https://github.com/takeokunn/cl-parser-kit";
+            homepage = "https://github.com/nerima-lisp/cl-parser-kit";
             license = pkgs.lib.licenses.mit;
             platforms = pkgs.lib.platforms.linux;
           };

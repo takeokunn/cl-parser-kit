@@ -3,16 +3,16 @@
     "cl-prolog": {
       "flake": false,
       "locked": {
-        "lastModified": 1784437549,
-        "narHash": "sha256-1WRrmNeniD1w1euhGhOCEpQoPVum5M2G6JVESAHzW1w=",
-        "owner": "takeokunn",
+        "lastModified": 1784884724,
+        "narHash": "sha256-kzvL7CNBj4YA1Oj8oP8gPLo4t52uMlRrM0xxWlvjtxo=",
+        "owner": "nerima-lisp",
         "repo": "cl-prolog",
-        "rev": "b3049ad4f616e9b5cfc6987b1449b3f0920b1323",
+        "rev": "ed657d736a99d1543297dbe91f303129c5e3aaef",
         "type": "github"
       },
       "original": {
-        "owner": "takeokunn",
-        "ref": "v0.6.0",
+        "owner": "nerima-lisp",
+        "ref": "v0.7.0",
         "repo": "cl-prolog",
         "type": "github"
       }
@@ -20,16 +20,16 @@
     "cl-weave": {
       "flake": false,
       "locked": {
-        "lastModified": 1784441992,
-        "narHash": "sha256-ucrWD3PjamiyJ0wKhwaatGcHWicSDI3f89E4uvkeupA=",
-        "owner": "takeokunn",
+        "lastModified": 1784866842,
+        "narHash": "sha256-uFdqahTn9aTgFYnV8tkY5CLI53EGxSZGXjW6Ky1NgXY=",
+        "owner": "nerima-lisp",
         "repo": "cl-weave",
-        "rev": "985445109abe773fb96c479e4abdcc9e747c62bb",
+        "rev": "7ddc1a283878878a58ec90ab6d4742be86868ba8",
         "type": "github"
       },
       "original": {
-        "owner": "takeokunn",
-        "ref": "v0.8.0",
+        "owner": "nerima-lisp",
+        "ref": "v0.10.0",
         "repo": "cl-weave",
         "type": "github"
       }
@@ -59,15 +59,15 @@
         "treefmt-nix": "treefmt-nix"
       },
       "locked": {
-        "lastModified": 1783865381,
-        "narHash": "sha256-9UjAmxNHhk7x4Tn1BKoQChxuubGgtcwWVyqHf0ze5kg=",
-        "owner": "takeokunn",
+        "lastModified": 1784862675,
+        "narHash": "sha256-KfxEsl6TSDZwFhIyA2QP3BX+jLw6qJWEz/uMPDkYnKI=",
+        "owner": "nerima-lisp",
         "repo": "paredit-cli",
-        "rev": "1baae6f3a71bc8c66b6ca932021cf45d584f5f07",
+        "rev": "e321bbac6d25b181eaf286697d9761cc3e874091",
         "type": "github"
       },
       "original": {
-        "owner": "takeokunn",
+        "owner": "nerima-lisp",
         "repo": "paredit-cli",
         "type": "github"
       }

@@ -99,8 +99,8 @@ To load the repository test system explicitly:
 The test system depends on `cl-weave` and `cl-prolog`, which are not distributed
 through Quicklisp/Ultralisp; the Nix dev shell (`nix develop`) and `nix flake
 check` resolve the pinned versions automatically. Outside Nix, make matching
-checkouts of [`cl-weave`](https://github.com/takeokunn/cl-weave) and
-[`cl-prolog`](https://github.com/takeokunn/cl-prolog) discoverable by ASDF (see
+checkouts of [`cl-weave`](https://github.com/nerima-lisp/cl-weave) and
+[`cl-prolog`](https://github.com/nerima-lisp/cl-prolog) discoverable by ASDF (see
 `scripts/bootstrap.lisp` for the exact roots it expects). Running the library
 itself never requires these.
 
