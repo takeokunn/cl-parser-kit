@@ -2,6 +2,336 @@
 
 ## Unreleased
 
+## 0.3.0 - 2026-07-24
+
+- rewrote `%pratt-start-expression/cps` (`pratt-parse.lisp`) to reuse the
+  existing `%pratt-led-step/cps` macro instead of hand-duplicating its exact
+  `multiple-value-bind`/`if-ok`/`funcall-failure` expansion shape -- the
+  macro already existed specifically to remove this repetition for its two
+  other call sites, this was the one place still duplicating it by hand
+- converted `many-till` (`combinators-repeat.lisp`) from a direct
+  `run-parser` call (which re-validates the whole token vector against
+  `*maximum-parser-tokens*` on every iteration) to `%run-parser/if-success`
+  over the pre-validated vector, matching every sibling repetition
+  combinator in this file and removing a redundant per-iteration
+  revalidation cost
+- added a round-trip test exercising every one of a SPAN's seven fields
+  individually through `ast-node->sexp`/`sexp->ast-node` with distinct
+  values (`trees-traversal-test.lisp`): `%span->plist`/`%plist->span`
+  (`tree.lisp`) each independently list the same seven span keys with no
+  shared schema definition, and `ast-node-equal`'s own `:include-span`
+  comparison only checks START/END per its documented contract, so no
+  existing test could have caught the two functions silently drifting out
+  of sync on SOURCE/*-LINE/*-COLUMN
+
+- merged `ensure-vector-up-to`'s `string` and `vector` `etypecase` clauses
+  (`core.lisp`) into one `(or string vector)` clause, matching `eof-token-p`'s
+  existing style in `parser.lisp`: the `string` clause's `(coerce thing
+  'vector)` was a verified no-op (a string already satisfies `vector`, so
+  `coerce` returns the same object unchanged), making the two clauses
+  identical
+- extracted `children-equal-p` out of `%tree-equal`'s (`tree.lisp`) dense
+  `and`-chain: the pairwise child-list-walking loop is now a separately
+  named local function, so the chain reads as a checklist -- type, value,
+  span?, data?, children -- without the walk's mechanics interrupting it
+
+- added two `it-property` tests (`trees-traversal-test.lisp`) generalizing
+  the existing fixed-example `sexp->ast-node-round-trips-test` to a
+  randomized range of tree shapes: `AST-NODE->SEXP`/`SEXP->AST-NODE` must
+  round-trip for any linear depth (using the existing `%deep-ast` generator)
+  and any child count (`%wide-ast`), not just the one hand-picked sample tree
+
+- removed `%scan-plain-digits` (`tokenizer-rules-extra.lisp`): it was
+  `%scan-radix-digits` called at radix 10 in every branch but written as an
+  independent copy of the same loop; its three call sites now pass radix 10
+  explicitly instead
+- extracted `%ensure-vector-within-tokenizer-limit` (`tokenizer.lisp`),
+  shared by `%ensure-tokenizer-rule-vector` and
+  `%ensure-tokenizer-rule-alternatives-vector`, which repeated the identical
+  resource-limit-check-then-signal shape differing only in which limit/kind
+  applies
+- extracted `%tree-node-label` (`tree.lisp`), shared by `%tree->string` and
+  `%tree->dot`'s `label-of`, which independently rendered the identical
+  "TYPE VALUE" / "TYPE" string, one writing straight to a stream and the
+  other returning a string for DOT-escaping
+
+- rewrote three clusters of near-duplicate `it-sequential` tests as
+  `cl-weave`'s table-driven `it-each` (advanced `cl-weave` usage: a literal
+  cases list destructured per-case, with the case values also driving each
+  generated test's own name): `diagnostics-test.lisp`'s six
+  `diagnostic-related-count-limit-*` tests (a 2x3 slot x malformed-shape
+  table), its four `diagnostics-string-count-limit-*` tests (a
+  malformed-shape table), and `parser-contract-test.lisp`'s four
+  `*-enforces-token-count-limit-*` tests (an entry-point x input-shape
+  table) -- each cluster differed only in a couple of concrete values behind
+  an identical assertion, not in distinct documented scenarios
+
+- extracted `define-token-set-predicate` (`combinators-token.lisp`),
+  collapsing `token-type-in`/`-not-in`, `token-text-in`/`-not-in`, and
+  `token-value-in`/`-not-in` -- six near-identical single-token
+  set-membership predicates differing only in their accessor, equality test,
+  and whether a `NIL` accessor value needs special handling -- into one
+  macro plus three short invocations, each keeping its own full docstring
+
+- updated every project-metadata reference from the old `github.com/takeokunn/*`
+  locations to `github.com/nerima-lisp/*`, matching the repositories' actual
+  move to the `nerima-lisp` GitHub organization: `cl-parser-kit.asd` and
+  `cl-parser-kit-test.asd`'s `:homepage`/`:bug-tracker`/`:source-control`,
+  `flake.nix`'s `cl-weave`/`cl-prolog`/`paredit-cli` input URLs and package
+  homepage (regenerating `flake.lock` to match), and `README.md`'s
+  dependency links; left `:author "takeokunn"` and `LICENSE`'s copyright
+  holder untouched since those name a person, not a repository location
+- consolidated the `:type type :skip-p skip-p :matcher ...` boilerplate that
+  every tokenizer rule constructor repeated (11 call sites across
+  `tokenizer-rules.lisp`, `tokenizer-rules-text.lisp`, and
+  `tokenizer-rules-extra.lisp`) into one small macro, `%token-rule`,
+  composable enough to fit both bare-lambda matchers and matchers built up
+  inside a `let`/`let*` of precomputed bindings
+
+- closed several more genuine branch-coverage gaps found by systematically
+  walking every remaining uncovered line in `src/`, distinguishing real gaps
+  from `sb-cover` artifacts (macro-attribution, `&key`/`&optional` defaults,
+  and macro-internal control flow -- documented as a generalized pattern in
+  CONTRIBUTING.md): `%line-comment-end` never had a test for an unterminated
+  line comment reaching end-of-source; `%write-diagnostic-related-items`
+  never had a test for a bare single note/fix-it (not wrapped in a list);
+  `%merge-parse-failure-pair`'s fallback-to-LEFT's-actual (when positions tie
+  and RIGHT's actual is `NIL`) was never one of the mutation-testing suite's
+  cases; `times-between` never had a test for `MIN > MAX`; `ast-node-equal`
+  never had a test with `:include-data t` or for `ast-node->dot`'s newline
+  escape case
+- removed two more provably-unreachable branches, using the same
+  call-graph-tracing method as `%trailing-token-failure` earlier: `permute`'s
+  "no remaining element matched, and no failure was ever recorded" fallback
+  (impossible given `NEXT-ROUND`'s own `REMAINING-COUNT > 0` guard), and
+  `%source-line-starts`'s direct/uncached branch (impossible given its sole
+  caller, `%source-line-at`, only invokes it inside a
+  `*diagnostic-source-line-start-cache*` truthiness check)
+- documented `%resource-limit-reader-symbol` (`core.lisp`) as another
+  instance of the macro-internal-control-flow coverage artifact: it is called
+  only from `define-resource-limit-condition`'s own macro body, so every
+  invocation happens at the macroexpansion time of whichever file defines a
+  resource-limit condition, never at program-execution time
+- removed an unused `on-failure` continuation parameter from
+  `%parse-pratt-then` (`pratt-builders.lisp`, introduced earlier in this same
+  round of changes): every one of its four call sites relied on the default
+  propagate-as-is behavior, so the explicit-override branch was dead code
+  from the moment it was written
+- generalized `scripts/check-coverage.pl`'s macro-attribution exclusion list
+  to also cover `pratt.lisp` (whose only non-trivial content, beyond three
+  `defstruct`s, is `define-pratt-register-operator`'s macro body); added a
+  guard against a zero adjusted-coverage denominator after briefly
+  over-extending the exclusion list to ~20 files and hitting exactly that
+  crash (reverted; see CONTRIBUTING.md for why whole-file exclusion doesn't
+  scale to files where the artifact is a small fraction of real, tested
+  content)
+- removed dead code in `%parse-failure-default-span` (`parse-failure-format.lisp`):
+  its diagnostics-borrowing branch was live but unreachable in practice --
+  its one caller (`%parse-failure-default-diagnostic`) only ever runs after
+  `parse-failure->diagnostics` has already proven the same failure's filtered
+  diagnostics list is empty, so recomputing that list here could never
+  return anything to borrow a span from
+- removed dead code in `%trailing-token-failure` (`parse-failure.lisp`): its
+  "no token at POSITION" branch was unreachable -- traced its one call site
+  (`%parse-with-full-consumption`) and proved both of *its* two callers
+  (`parse-all`, `parse-pratt-all`) always pair `ok=nil` with a real `FAILURE`
+  object, so `%trailing-token-failure` only ever runs with `ok=t` and
+  `position` still short of the stream length
+- fixed a crash in `%parse-failure-default-span` (`parse-failure-format.lisp`):
+  when a `parse-failure`'s `diagnostics` field held a non-empty list of
+  nothing but `NIL` entries -- a legitimate input the rest of this file
+  (`%write-diagnostics`, `%parse-failure-diagnostics-list`) already tolerates
+  and skips -- the fallback span lookup called `diagnostic-span` on the raw
+  list's untested-for-nil first element instead of the already-nil-filtered
+  list, signalling an uncontrolled `TYPE-ERROR` instead of falling through to
+  `NIL`; `parse-failure->diagnostics`/`parse-failure->string` now synthesize
+  the intended default diagnostic in this case instead of crashing
+
+- rewrote `%tree-children-list` and `%validate-tree-child-list` (in
+  `tree.lisp`) in terms of `%do-tree-children`, the macro they and every
+  `%tree-walk`/`%tree-depth`/`%tree->string`/`%tree->dot` call site already
+  shared -- the same circular/improper-list cycle-detecting walk had three
+  independent hand-rolled copies (one collecting, one validating-only, one
+  macro-generated), now one
+- extracted `%parse-pratt-then` (in `pratt-builders.lisp`), a CPS helper
+  mirroring `combinators.lisp`'s `%run-parser/if-success` for the Pratt side:
+  `register-prefix`, `register-ternary`, `register-infix-non-assoc`, and
+  `register-grouping` each repeated the same
+  `multiple-value-bind (ok value next failure) (parse-pratt ...) (if ok ...)`
+  shape: now each supplies only its own success continuation, with failure
+  propagation defaulted the same way `%run-parser/if-success` already does
+- upgraded the `cl-weave` test dependency from v0.9.0 to v0.10.0 and the
+  `cl-prolog` test dependency from v0.6.0 to v0.7.0 (`flake.nix`/`flake.lock`);
+  both releases are additive/perf/refactor only for the surface this project
+  uses, confirmed by a full compile-and-test run against the new pins
+- closed several genuine (non-artifact) coverage gaps found by reading
+  `sb-cover`'s per-line branch report directly: `bind-parser` never had a test
+  where the first sub-parser consumed no input before the second one failed
+  (the uncommitted-failure branch, now verified via `opt`'s recovery
+  semantics); `ensure-vector-up-to`'s LIST clause never had a test that ran to
+  completion successfully (every existing LIST-based test hit either an
+  error or the token-count limit); `%coerce-bounded-float` never had a test
+  for negative-mantissa overflow saturation, only positive; `make-radix-integer-rule`
+  never had a test for a matched-but-empty digit run distinct from a
+  prefix mismatch; `make-operator-rule`'s matcher never had a test invoking
+  it directly at an out-of-bounds index (`token-rule-matcher` is public API,
+  so this is reachable independent of `tokenize`'s own bounds-safe loop)
+- extracted `%walk-bounded-list` (in `core.lisp`), the bounded
+  cycle-detecting cons-walk (a `seen` hash-table plus a count-against-limit
+  guard) that `%ensure-parse-failure-list-count`, `%present-fixes`,
+  `%write-diagnostic-related-items`, and `%write-diagnostics` each
+  re-implemented by hand across four files; every one of them now supplies
+  only its own limit-exceeded condition and per-item action
+- inlined and removed `%delimited-boundary`, a private one-line alias for
+  `between` with no independent meaning
+- documented why `tokenize-string` (a public alias for `tokenize`) exists,
+  rather than leaving a reader to chase an undocumented one-line
+  indirection
+- taught `scripts/check-coverage.pl` to additionally report expression/branch
+  coverage with known macro-attribution-artifact files excluded from the
+  denominator (currently `tree-macros.lisp`, whose 0/150 is confirmed
+  artifact, not untested code -- every function `define-tree-node-family`
+  generates has dedicated tests reached through `ast.lisp`/`cst.lisp`).  This
+  does not change the gate's pass/fail threshold, only adds a second,
+  more accurate figure alongside the raw one: 96.10% adjusted expression
+  coverage versus 93.74% raw
+- documented, in `CONTRIBUTING.md`, the coverage-gate policy (90%/80% is the
+  real bar; 100% is not reachable with `sb-cover` regardless of test effort,
+  for the two proven reasons above) and the test-abstraction convention
+  (`assert-combinator-success`/`-failure` by default, with the three
+  narrow exceptions where it does not fit), so both are durable project
+  policy rather than one-off decisions
+- removed dead code: `%join-expected-items`'s 0- and 1-item `case` clauses
+  were unreachable -- its sole caller (`%parse-failure-expected-string`)
+  only ever invokes it with 2+ items, handling 0 and 1 itself first
+- proved, with a controlled before/after test, that `sb-cover` cannot mark
+  `&key`/`&optional` default-value forms as covered even when a test calls
+  the function with zero arguments so every default fires: `make-span`'s
+  six default forms stayed 0/6 in the coverage report after adding
+  `make-span-defaults-every-keyword-to-a-zero-width-origin-test`, which
+  passes and does exercise them at runtime. This is a second, independent
+  `sb-cover` reporting gap alongside the macro-attribution one already
+  documented, confirmed empirically rather than inferred
+- closed three more real coverage gaps in `parse-failure-format.lisp`:
+  the empty-`:expected`-list "unknown input" fallback, a non-token/
+  non-symbol/non-string `:actual` value's `PRIN1-TO-STRING` fallback, and a
+  typeless token's text-based fallback; expression coverage rose to 93.74%
+  and branch coverage to 93.60%
+- re-audited the 5 test-suite occurrences previously classified as
+  deliberate exceptions to the `assert-combinator-success`/`-failure`
+  convention; 2 of them (in `examples-advanced-snippets-test.lisp`) turned
+  out to have a single deterministic outcome once traced through their
+  fixed input, not a genuine either-outcome case, and are now converted.
+  Exactly 3 verified exceptions remain in the whole suite: a fuzz test
+  (outcome depends on generated input), a macro definition, and a
+  parser-fixture builder closure (production grammar code, not a test
+  assertion)
+- closed five more real coverage gaps: `verify`'s default `:expected-name`,
+  `length-count`'s non-integer/negative count rejection, `make-span`'s
+  all-defaults construction, expression coverage rose to 93.66% and branch
+  coverage to 93.19%
+- converted the remaining 12 hand-written `multiple-value-bind` assertion
+  blocks that used a `diagnostics`-named fourth value (across
+  `combinators-core-test.lisp`, `combinators-delimited-test.lisp`,
+  `combinators-recover-test.lisp`, `combinators-separator-test.lisp`, and
+  `combinators-transform-test.lisp`) to `assert-combinator-success`; a
+  systematic final sweep confirmed exactly 5 hand-written occurrences remain
+  in the whole test suite, each independently verified as a deliberate
+  exception (an either-outcome-is-valid test, one macro definition, and one
+  parser-fixture builder closure) rather than an oversight
+- closed six more real coverage gaps: `eof-token-p`'s LIST-argument clause,
+  `parse-all`'s own token-count-limit check (distinct from `parse-tokens`'s),
+  `make-keyword-rule`'s non-string-keyword rejection and its
+  case-sensitive-by-default matching, `make-predicate-rule`'s `:skip-p`
+  branch, and `%source-line-at`'s *uncached* fallback CRLF/lone-CR handling
+  (a second, independent implementation from the cached path fixed earlier);
+  expression coverage rose from 93.1% to 93.6% and branch coverage from
+  90.5% to 92.6%
+- raised the abstraction level of ~20 hand-written
+  (across `combinators-chain-test.lisp`, `combinators-core-test.lisp`,
+  `combinators-expression-test.lisp`, `combinators-memoize-test.lisp`,
+  `combinators-separator-test.lisp`, `combinators-transform-test.lisp`,
+  `examples-snippets-runtime-test.lisp`, and `parser-diagnostic-test.lisp`)
+  to `assert-combinator-success`/`assert-combinator-failure`; only 3 of the
+  original 35 remain, each a deliberate exception (two tests where either
+  outcome is valid so no single fixed assertion applies, one macro
+  definition) rather than an oversight
+- documented, with exact numbers, why 100% `sb-cover` coverage is not
+  reachable while also maximizing macro use: of the 424 currently-uncovered
+  `src/` expressions, roughly 220 are inside macro *definitions*
+  (`tree-macros.lisp`, `pratt.lisp`, `combinators-sequence.lisp`'s
+  `define-separated-parser`/`define-chain-parser`, `pratt-parse.lisp`'s
+  `%pratt-led-step/cps`, `core.lisp`'s `define-resource-limit-condition`) —
+  `sb-cover` attributes a macro's generated code to its call site, never to
+  the definition, so these bodies read as 0% regardless of how thoroughly
+  the generated functions are tested; added matching explanatory comments
+  next to each one
+- raised the abstraction level of ~20 hand-written
+  `(multiple-value-bind (ok value next failure) ...)` test assertion blocks
+  in `pratt-builders-test.lisp`, `parser-properties-test.lisp`,
+  `combinators-control-test.lisp`, and `parser-contract-test.lisp` to the
+  existing `assert-combinator-success` / `assert-combinator-failure` macros,
+  which already encode the "OK must be true/false, VALUE must be
+  false-on-failure" invariant once instead of at every call site
+- closed real coverage gaps found by walking `sb-cover`'s per-branch report
+  (not the aggregate percentage): `%coerce-bounded-float`'s
+  `single-float`/`short-float`/`long-float` saturation arms, the float
+  scanner's digit-less `e`/`.` decline paths and `:allow-sign`, every
+  `make-*-rule` constructor's `:skip-p` branch, the diagnostic source-line
+  cache's CRLF/lone-CR and line-truncation paths, `ensure-vector`'s plain
+  (non-circular) too-long and successful-string-coercion paths, and the five
+  downstream-parse-failure propagation branches across
+  `register-prefix`/`register-ternary`/`register-infix-non-assoc`/
+  `register-grouping` in `pratt-builders.lisp`; expression coverage rose from
+  91.5% to 93.1% and branch coverage from 87.4% to 90.5%
+- extracted `%scan-float-fractional-part`, `%scan-float-exponent-part`, and
+  `%float-lexeme-value` out of `make-float-rule`'s matcher, which was the
+  most deeply nested function in the library (three sequential scanning
+  phases and a value computation all inlined in one lambda); behavior is
+  unchanged, verified against the existing float tests plus targeted manual
+  checks of the "digit-less e/." decline paths
+- consolidated `ast.lisp` and `cst.lisp` into a single `define-tree-node-family`
+  macro invocation each; the macro (now in `src/tree-macros.lisp`, split out
+  of `src/tree.lisp`) generates the full per-family API (`->sexp`, `sexp->`,
+  `token->`, `-of`, `-walk`, `-reduce`, `-map`, `-equal`, `-find`, `-collect`,
+  `-count`, `-depth`, `->string`, `->dot`) from the generic `%tree-*` engine,
+  removing ~200 lines of duplication between the two families
+- removed the unused internal helper `%parser-token-limit-failure-if-needed`
+- upgraded the test-only dependency to its latest release (cl-weave `v0.9.0`)
+  and added `t/fuzz-test.lisp`, which uses cl-weave's new `it-fuzz` driver to
+  fuzz `tokenize-string` and `parse-tokens` against adversarial generated
+  inputs
+- introduced `define-resource-limit-condition` and rebuilt
+  `tokenizer-resource-limit-exceeded`, `diagnostic-resource-limit-exceeded`,
+  and `parse-failure-resource-limit-exceeded` on it, removing their identical
+  hand-written `kind`/`value`/`limit` condition bodies without changing any
+  exported name
+- extracted `%run-parser-sequence` / `%run-ordered-choice` (shared by
+  `seq`/`sequence-of` and `alt`/`choice`) and `%run-fixed-repetition` (shared
+  by `times` and `length-count`'s internal counted-repetition helper), so each
+  pair's previously duplicated loop body has one implementation
+- rewrote `%run-parser-sequence`, `%run-ordered-choice`, `recover`, and
+  `permute` on the existing `%run-parser/if-success` continuation-passing
+  helper instead of a direct `multiple-value-bind` over `run-parser`, for
+  consistency with the CPS style already used throughout
+  `combinators-sequence.lisp`
+- split `apply-fix-it` / `apply-fixes` and their piece-list text-splicing
+  helpers out of `diagnostics.lisp` into `src/diagnostics-fixes.lisp` (a
+  self-contained subsystem with no dependency on diagnostic/parse-failure
+  merging)
+- added direct tests for `ensure-list`'s circular- and improper-list rejection
+- extracted `%recursion-depth-failure`, shared by combinator and Pratt
+  recursion-depth guards, which previously built an identically-shaped
+  `parse-failure` by hand in both `combinators.lisp` and `pratt-parse.lisp`
+- rewrote `%run-parser-or-recoverable` (backing `opt`) on
+  `%run-parser/if-success` for the same reason; the remaining hand-written
+  `multiple-value-bind (ok value next result)` call sites (`memoize`,
+  `%parse-with-full-consumption`, `parse-tokens`) each got a comment
+  explaining why they stay direct-style -- caching all four return channels,
+  post-processing an arbitrary caller-supplied form, and terminating the CPS
+  chain at the public API boundary, respectively, none of which fit a
+  success/failure continuation split
+
 ## 0.2.0 - 2026-07-20
 
 - capped caller-supplied token streams with `*maximum-parser-tokens*`, which
