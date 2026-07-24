@@ -7,3 +7,6 @@
 *.paredit-tmp-*
 /t/.tokenizer-test-forms.lisp
 /t/.tokenizer-test-partial.lisp
+
+.worktrees/
+.agent-scratch/
