@@ -14,13 +14,9 @@ SETF to raise it for intentionally large or deep expressions.")
   "Current Pratt recursion depth; bound dynamically during a parse.")
 
 (defun %pratt-depth-exceeded-failure (position)
-  (make-parse-failure
-   :position position
-   :expected :maximum-recursion-depth
-   :actual nil
-   :diagnostics (list (error-diagnostic
-                       (format nil "Maximum expression depth ~D exceeded"
-                               *maximum-pratt-recursion-depth*)))))
+  (%recursion-depth-failure position
+                            "Maximum expression depth ~D exceeded"
+                            *maximum-pratt-recursion-depth*))
 
 (defun %token-key (token)
   (or (token-type token) (token-text token)))
@@ -35,6 +31,15 @@ SETF to raise it for intentionally large or deep expressions.")
    :actual token
    :diagnostics (list (error-diagnostic (format nil "Expected ~A" expected)
                                         :span (%token-span token :position position)))))
+
+;; As with the macro-generated code in TREE-MACROS.LISP and
+;; COMBINATORS-SEQUENCE.LISP, SB-COVER attributes this DECLAIM'd inline
+;; function's body to each of its call sites (in %PRATT-STEP-LED-LOOP/CPS and
+;; %PRATT-START-EXPRESSION/CPS) rather than to this definition, so it reads as
+;; permanently uncovered here regardless of how thoroughly Pratt parsing is
+;; tested -- removing the INLINE declaration would "fix" the number but cost a
+;; function-call per token lookup in the hot Pratt loop, so it stays.
+(declaim (inline %pratt-token-at))
 
 (defun %pratt-token-at (tokens index)
   (and (< index (length tokens))
@@ -72,6 +77,12 @@ SETF to raise it for intentionally large or deep expressions.")
   (funcall success left next nil))
 
 ;; Run a led parser and continue the Pratt loop only when it succeeds.
+;;
+;; As with the other macro-generated code in this library, SB-COVER
+;; attributes this expansion to its two call sites (%PRATT-CONTINUE-POSTFIX/CPS
+;; and %PRATT-CONTINUE-INFIX/CPS below) rather than to this definition, so this
+;; macro body showing as uncovered is a reporting artifact -- both call sites
+;; are exercised by every Pratt test that parses an infix or postfix operator.
 (defmacro %pratt-led-step/cps ((tokens table min-binding-power success failure)
                                led-call)
   (let ((ok (gensym "OK"))
@@ -127,12 +138,8 @@ SETF to raise it for intentionally large or deep expressions.")
       (t
        (let ((prefix (%pratt-lookup-prefix table token)))
          (if prefix
-             (multiple-value-bind (ok left next prefix-failure)
-                 (%pratt-call-prefix prefix token tokens (1+ position) table)
-               (if ok
-                   (%pratt-step-led-loop/cps
-                    tokens table min-binding-power left next success failure)
-                   (funcall failure next prefix-failure)))
+             (%pratt-led-step/cps (tokens table min-binding-power success failure)
+                 (%pratt-call-prefix prefix token tokens (1+ position) table))
              (funcall failure position (%pratt-error position token :prefix))))))))
 
 (defun %pratt-parse/cps (tokens table position min-binding-power success failure)

@@ -22,11 +22,20 @@
                            failure))))
 
 (defun %run-parser-or-recoverable (parser input position fallback-value)
-  (multiple-value-bind (ok value next result)
-      (run-parser parser input position)
-    (if ok
-        (%success value next result)
-        (%recoverable-success fallback-value position nil result))))
+  (%run-parser/if-success
+   parser input position
+   (lambda (value next result) (%success value next result))
+   (lambda (result failed-next)
+     (declare (ignore failed-next))
+     (%recoverable-success fallback-value position nil result))))
+
+;;; As with DEFINE-TREE-NODE-FAMILY (see TREE-MACROS.LISP) and
+;;; DEFINE-PRATT-REGISTER-OPERATOR (see PRATT.LISP), SB-COVER attributes each
+;;; DEFINE-SEPARATED-PARSER / DEFINE-CHAIN-PARSER expansion's body to its call
+;;; site below, not to the macro definitions here -- SEP-BY/SEP-BY1/
+;;; SEP-END-BY/SEP-END-BY1/CHAINL1/CHAINR1 are exercised extensively
+;;; (t/combinators-separator-test.lisp, t/combinators-chain-test.lisp), so
+;;; these two macro bodies showing as uncovered is a reporting artifact.
 
 (defmacro define-separated-parser (name &rest options)
   (let ((parser-name (intern (symbol-name name) :keyword)))

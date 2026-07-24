@@ -60,11 +60,9 @@ literally; supply ESCAPES -- an alist of (escaped-char . replacement-char), e.g.
 their control characters. A character not present in ESCAPES is still taken
 literally."
   (declare (type character delimiter))
-  (make-token-rule
-   :type type
-   :skip-p skip-p
-   :matcher (lambda (source index)
-              (%match-delimited-token source index delimiter escape-char escapes))))
+  (%token-rule
+   (lambda (source index)
+     (%match-delimited-token source index delimiter escape-char escapes))))
 
 (defun %line-comment-end (source start)
   (or (position-if #'source-line-break-p source :start start)
@@ -80,24 +78,22 @@ literally."
         (length source))))
 
 (defun %make-prefixed-comment-rule (type skip-p value-function prefix end-fn)
-  (make-token-rule
-   :type type
-   :skip-p skip-p
-   :matcher (lambda (source index)
-              (let* ((prefix-length (length prefix))
-                     (source-length (length source))
-                     (match-end (+ index prefix-length)))
-                (when (and (<= match-end source-length)
-                           (string= prefix source :start2 index :end2 match-end))
-                  (let ((end (funcall end-fn source match-end)))
-                    ;; Comments are almost always skipped; a skipped match's
-                    ;; TEXT/VALUE are never read (see %TOKENIZE-RULE-MATCH),
-                    ;; so skip the %STRING-RANGE copy and VALUE-FUNCTION call.
-                    (if skip-p
-                        (values t (- end index) nil nil)
-                        (%emit-token-match source index end
-                                           (funcall value-function
-                                                    (%string-range source index end))))))))))
+  (%token-rule
+   (lambda (source index)
+     (let* ((prefix-length (length prefix))
+            (source-length (length source))
+            (match-end (+ index prefix-length)))
+       (when (and (<= match-end source-length)
+                  (string= prefix source :start2 index :end2 match-end))
+         (let ((end (funcall end-fn source match-end)))
+           ;; Comments are almost always skipped; a skipped match's
+           ;; TEXT/VALUE are never read (see %TOKENIZE-RULE-MATCH),
+           ;; so skip the %STRING-RANGE copy and VALUE-FUNCTION call.
+           (if skip-p
+               (values t (- end index) nil nil)
+               (%emit-token-match source index end
+                                  (funcall value-function
+                                           (%string-range source index end))))))))))
 
 (defun make-line-comment-rule (&key (type :comment) (prefix ";") (skip-p t) (value-function #'identity))
   (%ensure-non-empty-string prefix "prefix")

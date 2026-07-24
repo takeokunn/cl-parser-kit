@@ -45,27 +45,29 @@ never matches. See ATTEMPT for disambiguating elements with overlapping starts."
                       (try-candidates (current remaining-count index diagnostics best-failure)
                         (if (= index count)
                             ;; No remaining element matched at CURRENT: a required
-                            ;; element is missing. Report the farthest miss.
-                            (%failure-from
-                             (or best-failure
-                                 (%make-parse-failure current :permutation nil nil nil)))
+                            ;; element is missing. Report the farthest miss. BEST-FAILURE
+                            ;; is always non-NIL here: REMAINING-COUNT > 0 (checked by
+                            ;; NEXT-ROUND before ever calling TRY-CANDIDATES) guarantees
+                            ;; at least one active element is tried during this sweep,
+                            ;; and MERGE-PARSE-FAILURES always returns non-NIL once given
+                            ;; a real failure to merge in.
+                            (%failure-from best-failure)
                             (if (not (aref active index))
                                 (try-candidates current remaining-count (1+ index)
                                                 diagnostics best-failure)
-                                (let ((parser (aref items index)))
-                              (multiple-value-bind (ok value next result)
-                                  (run-parser parser input current)
-                                (cond
-                                  (ok
+                                (%run-parser/if-success
+                                 (aref items index) input current
+                                 (lambda (value next result)
                                    (setf (aref results index) value)
                                    (setf (aref active index) nil)
                                    (next-round next
                                                (1- remaining-count)
                                                (%merge-diagnostics diagnostics result)))
-                                  ((parse-failure-committed-p result)
-                                   (%committed-failure-from result))
-                                  (t
-                                   (try-candidates current remaining-count (1+ index)
-                                                   diagnostics
-                                                   (merge-parse-failures best-failure result))))))))))
+                                 (lambda (result failed-next)
+                                   (declare (ignore failed-next))
+                                   (if (parse-failure-committed-p result)
+                                       (%committed-failure-from result)
+                                       (try-candidates current remaining-count (1+ index)
+                                                       diagnostics
+                                                       (merge-parse-failures best-failure result)))))))))
                (next-round position count '())))))))

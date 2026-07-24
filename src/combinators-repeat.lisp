@@ -14,6 +14,32 @@
     (error "~A count ~D exceeds *MAXIMUM-PARSER-REPETITION-COUNT* (~D)"
            name count *maximum-parser-repetition-count*)))
 
+(defun %run-fixed-repetition (parser input position count)
+  "Run PARSER exactly COUNT times from POSITION, threading the position through
+and collecting each result. Returns RUN-PARSER's (values ok value next result)
+contract: on success VALUE is the list of the COUNT results; on failure, the
+result is committed iff any repetition already consumed input (SEQ's
+semantics). Shared by TIMES and LENGTH-COUNT's %LENGTH-COUNTED, which differ
+only in where COUNT comes from -- a literal argument versus one parsed at run
+time."
+  (let ((current position)
+        (results '())
+        (diagnostics '()))
+    (block done
+      (loop repeat count
+            do (%run-progressing-parser/cps
+                parser input current
+                (lambda (value next result)
+                  (push value results)
+                  (setf current next
+                        diagnostics (%merge-diagnostics diagnostics result)))
+                (lambda (failure)
+                  (return-from done
+                    (if (= current position)
+                        (%failure-from failure)
+                        (%committed-failure-from failure))))))
+      (%success (nreverse results) current diagnostics))))
+
 (defun times (count parser)
   "Parse PARSER exactly COUNT times, returning a list of the COUNT results.
 
@@ -26,22 +52,7 @@ COUNT of 0 succeeds immediately consuming nothing and yielding NIL."
   (make-parser
    :name :times
    :fn (lambda (input position)
-         (let ((current position)
-               (results '())
-               (diagnostics '()))
-           (block done
-             (loop repeat count
-                   do (%run-progressing-parser/cps
-                       parser input current
-                       (lambda (value next result)
-                         (push value results)
-                         (setf current next
-                               diagnostics (%merge-diagnostics diagnostics result)))
-                       (lambda (failure)
-                         (if (= current position)
-                             (return-from done (%failure-from failure))
-                             (return-from done (%committed-failure-from failure))))))
-             (%success (nreverse results) current diagnostics))))))
+         (%run-fixed-repetition parser input position count))))
 
 (define-parser-function skip-many (parser) :skip-many
   "Parse PARSER zero or more times, discarding every result, yielding T.
@@ -100,28 +111,28 @@ PARSER fails before END matches, or when END commits input and then fails; such
 a failure is committed iff any input was consumed, so an enclosing OPT/MANY does
 not silently backtrack past a partially-parsed run."
   (labels ((recur (current values diagnostics)
-             (multiple-value-bind (end-ok end-value end-next end-result)
-                 (run-parser end input current)
-               (declare (ignore end-value))
-               (cond
-                 (end-ok
-                  (%success (nreverse values)
-                            end-next
-                            (%merge-diagnostics diagnostics end-result)))
-                 ((parse-failure-committed-p end-result)
-                  (%committed-failure-from end-result))
-                 (t
-                  (%run-progressing-parser/cps
-                   parser input current
-                   (lambda (value next result)
-                     (recur next
-                            (cons value values)
-                            (%merge-diagnostics diagnostics result)))
-                   (lambda (item-failure)
-                     (let ((merged (merge-parse-failures end-result item-failure)))
-                       (if (= current position)
-                           (%failure-from merged)
-                           (%committed-failure-from merged))))))))))
+             (%run-parser/if-success
+              end input current
+              (lambda (end-value end-next end-result)
+                (declare (ignore end-value))
+                (%success (nreverse values)
+                          end-next
+                          (%merge-diagnostics diagnostics end-result)))
+              (lambda (end-result end-next)
+                (declare (ignore end-next))
+                (if (parse-failure-committed-p end-result)
+                    (%committed-failure-from end-result)
+                    (%run-progressing-parser/cps
+                     parser input current
+                     (lambda (value next result)
+                       (recur next
+                              (cons value values)
+                              (%merge-diagnostics diagnostics result)))
+                     (lambda (item-failure)
+                       (let ((merged (merge-parse-failures end-result item-failure)))
+                         (if (= current position)
+                             (%failure-from merged)
+                             (%committed-failure-from merged))))))))))
     (recur position '() '())))
 
 (defun fold-many1 (function initial parser)
@@ -168,22 +179,7 @@ least once. Megaparsec's `someTill`, the non-empty companion of MANY-TILL."
   (make-parser
    :name :length-count
    :fn (lambda (input position)
-         (let ((current position)
-               (values '())
-               (diagnostics '()))
-           (block done
-             (loop repeat count
-                   do (%run-progressing-parser/cps
-                       item-parser input current
-                       (lambda (value next result)
-                         (push value values)
-                         (setf current next
-                               diagnostics (%merge-diagnostics diagnostics result)))
-                       (lambda (failure)
-                         (if (= current position)
-                             (return-from done (%failure-from failure))
-                             (return-from done (%committed-failure-from failure))))))
-             (%success (nreverse values) current diagnostics))))))
+         (%run-fixed-repetition item-parser input position count))))
 
 (defun length-count (count-parser item-parser)
   "Parse COUNT-PARSER for a non-negative integer N, then parse ITEM-PARSER exactly

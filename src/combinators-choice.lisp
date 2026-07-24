@@ -25,18 +25,9 @@ when the alternatives are computed at runtime."
     (make-parser
      :name :alt
      :fn (lambda (input position)
-           (block alt
-             (if (zerop (length branches))
-                 (%failure position :alternative nil)
-                 (let ((best-failure nil))
-                   (loop for parser across branches
-                         do (multiple-value-bind (ok value next result)
-                                (run-parser parser input position)
-                              (when ok
-                                (return-from alt (%success value next result)))
-                              (setf best-failure
-                                    (merge-parse-failures best-failure result))))
-                   (%failure-from best-failure))))))))
+           (if (zerop (length branches))
+               (%failure position :alternative nil)
+               (%run-ordered-choice branches input position))))))
 
 (defun sequence-of (parsers)
   "Run PARSERS (a LIST) in sequence, returning the list of their values.
@@ -48,25 +39,7 @@ equivalent to (SEQ A B C), inheriting SEQ's commitment semantics."
     (make-parser
      :name :seq
      :fn (lambda (input position)
-           (block seq
-             (let ((values '())
-                   (current position)
-                   (diagnostics '())
-                   (best-failure nil))
-               (loop for parser across items
-                     do (multiple-value-bind (ok value next result)
-                            (run-parser parser input current)
-                          (unless ok
-                            (setf best-failure
-                                  (merge-parse-failures best-failure result))
-                            (return-from seq
-                              (if (= current position)
-                                  (%failure-from best-failure)
-                                  (%committed-failure-from best-failure))))
-                          (push value values)
-                          (setf diagnostics (%merge-diagnostics diagnostics result))
-                          (setf current next)))
-               (%success (nreverse values) current diagnostics)))))))
+           (%run-parser-sequence items input position)))))
 
 (define-parser-function option (default parser) :option
   ;; Reuse OPT's exact recoverable machinery, only substituting DEFAULT for

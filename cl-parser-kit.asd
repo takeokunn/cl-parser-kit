@@ -3,9 +3,9 @@
   :version "0.2.0"
   :author "takeokunn"
   :license "MIT"
-  :homepage "https://github.com/takeokunn/cl-parser-kit"
-  :bug-tracker "https://github.com/takeokunn/cl-parser-kit/issues"
-  :source-control (:git "https://github.com/takeokunn/cl-parser-kit.git")
+  :homepage "https://github.com/nerima-lisp/cl-parser-kit"
+  :bug-tracker "https://github.com/nerima-lisp/cl-parser-kit/issues"
+  :source-control (:git "https://github.com/nerima-lisp/cl-parser-kit.git")
   :pathname "src"
   :serial t
     :components ((:file "package")
@@ -17,8 +17,10 @@
                  (:file "tokenizer-rules-text")
                  (:file "tokenizer-rules-extra")
                  (:file "diagnostics")
+                 (:file "diagnostics-fixes")
                  (:file "diagnostics-format")
                  (:file "tree")
+                 (:file "tree-macros")
                  (:file "parse-failure")
                  (:file "parse-failure-format")
                  (:file "combinators")

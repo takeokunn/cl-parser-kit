@@ -1,5 +1,69 @@
 (in-package :cl-parser-kit)
 
+;; Called only from DEFINE-RESOURCE-LIMIT-CONDITION's own macro body (below),
+;; so every invocation happens at macroexpansion time -- compiling whichever
+;; file calls DEFINE-RESOURCE-LIMIT-CONDITION -- never at program-execution
+;; time; SB-COVER's runtime instrumentation cannot observe that regardless of
+;; how many callers exist. The same category as the macro-internal-control-flow
+;; pattern documented in CONTRIBUTING.md, just via a helper DEFUN rather than
+;; inline LET/LOOP forms.
+(defun %resource-limit-reader-symbol (name slot)
+  (intern (format nil "~A-~A" (string-upcase (symbol-name name)) (string-upcase (symbol-name slot)))
+          (symbol-package name)))
+
+(defmacro define-resource-limit-condition (name report-control-string &key documentation)
+  "Define NAME as an ERROR condition carrying :KIND, :VALUE, and :LIMIT
+initargs with matching NAME-KIND / NAME-VALUE / NAME-LIMIT readers, whose
+report calls (FORMAT STREAM REPORT-CONTROL-STRING KIND VALUE LIMIT).
+
+Every public resource-limit boundary in this library (tokenizer, diagnostic,
+parse-failure) signals one of these conditions instead of exhausting memory or
+the control stack on adversarial input; NAME and REPORT-CONTROL-STRING are the
+only things that differ between boundaries."
+  (let ((kind-reader (%resource-limit-reader-symbol name 'kind))
+        (value-reader (%resource-limit-reader-symbol name 'value))
+        (limit-reader (%resource-limit-reader-symbol name 'limit)))
+    `(define-condition ,name (error)
+       ((kind :initarg :kind :reader ,kind-reader)
+        (value :initarg :value :reader ,value-reader)
+        (limit :initarg :limit :reader ,limit-reader))
+       (:report (lambda (condition stream)
+                  (format stream ,report-control-string
+                          (,kind-reader condition)
+                          (,value-reader condition)
+                          (,limit-reader condition))))
+       ,@(when documentation `((:documentation ,documentation))))))
+
+(defun %walk-bounded-list (list limit on-limit-exceeded item-fn)
+  "Call (FUNCALL ITEM-FN item) for each item in LIST in order, bounding the
+walk against a hostile LIST the same way everywhere in this library: a
+circular LIST signals as soon as a repeated cons is seen, an improper LIST
+signals when the walk runs off its final cons, and any LIST longer than
+LIMIT items signals before ITEM-FN ever sees the (LIMIT+1)th one. Signalling
+means (FUNCALL ON-LIMIT-EXCEEDED count), where COUNT is the offending count;
+ON-LIMIT-EXCEEDED is expected to (ERROR ...) and never return.
+
+Shared by every public boundary that folds or renders a caller-supplied list
+under a resource limit -- parse-failure expected/diagnostic lists, fix-it
+batches, and diagnostic related-item batches all had their own copy of this
+exact loop, differing only in what ITEM-FN does with each item and which
+condition ON-LIMIT-EXCEEDED signals."
+  (loop with count = 0
+        with seen = (make-hash-table :test 'eq)
+        for tail = list then (cdr tail)
+        while (consp tail)
+        for item = (car tail)
+        do (when (gethash tail seen)
+             (funcall on-limit-exceeded (1+ limit)))
+           (setf (gethash tail seen) t)
+           (incf count)
+           (when (> count limit)
+             (funcall on-limit-exceeded count))
+           (funcall item-fn item)
+        finally
+           (unless (null tail)
+             (funcall on-limit-exceeded (1+ limit)))))
+
 (defun %check-proper-acyclic-list (thing)
   (let ((seen (make-hash-table :test 'eq))
         (cursor thing))
@@ -28,12 +92,11 @@ it for intentionally large parser inputs.")
 
 (defun ensure-vector-up-to (thing maximum-length)
   (etypecase thing
-    (string
-     (let ((length (length thing)))
-       (if (> length maximum-length)
-           (values nil length t)
-           (values (coerce thing 'vector) length nil))))
-    (vector
+    ;; A STRING already satisfies VECTOR (it needs no separate coercion --
+    ;; (COERCE a-string 'VECTOR) is a verified no-op, returning the same
+    ;; object), so one clause covers both, matching EOF-TOKEN-P's (OR STRING
+    ;; VECTOR) in PARSER.LISP.
+    ((or string vector)
      (let ((length (length thing)))
        (if (> length maximum-length)
            (values nil length t)

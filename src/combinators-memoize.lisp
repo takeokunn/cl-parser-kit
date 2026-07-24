@@ -43,6 +43,11 @@ backtracking grammar to avoid re-parsing the same span repeatedly. PARSER must b
 a pure parser (this library's parsers always are); its success value, next
 position, diagnostics, and failure/commitment are all cached and returned
 unchanged."
+  ;; Deliberately direct-style, not %RUN-PARSER/IF-SUCCESS: caching must record
+  ;; the raw OK flag alongside VALUE/NEXT/RESULT so a cache hit can replay all
+  ;; four return channels verbatim via VALUES-LIST. Splitting that into
+  ;; success/failure continuations would mean writing the same
+  ;; (SETF GETHASH ...) in two closures instead of once, for no clarity gain.
   (if *parse-memo-table*
       (let ((key (cons position parser)))
         (multiple-value-bind (cached hit) (gethash key *parse-memo-table*)

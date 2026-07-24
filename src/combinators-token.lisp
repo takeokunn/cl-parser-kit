@@ -24,81 +24,84 @@ SKIP-MANY / MANY-TILL repeat when the specific token type does not matter."
                      t)
                    :expected-name :any-token))
 
-(defun token-type-in (&rest types)
+(defmacro define-token-set-predicate
+    (name accessor &key (test '#'eql) nilable in-doc not-in-doc)
+  "Define TOKEN-<NAME>-IN and TOKEN-<NAME>-NOT-IN, a matched pair of single-token
+set-membership predicates built on SATISFIES-TOKEN and %ENSURE-TOKEN-SET-VECTOR:
+TOKEN-<NAME>-IN matches a token whose (ACCESSOR TOKEN) is TEST-equal to one of
+its &REST arguments; TOKEN-<NAME>-NOT-IN matches the complement. NILABLE T
+additionally treats a NIL (ACCESSOR TOKEN) as never a member of the set (needed
+for TOKEN-TEXT, whose NIL means the token carries no text at all -- unlike
+TOKEN-TYPE / TOKEN-VALUE, which are always present). All six TOKEN-*-IN /
+TOKEN-*-NOT-IN functions differed only in ACCESSOR, TEST, and this NIL check."
+  (let ((in-name (intern (format nil "TOKEN-~A-IN" name)))
+        (not-in-name (intern (format nil "TOKEN-~A-NOT-IN" name))))
+    `(progn
+       (defun ,in-name (&rest items)
+         ,in-doc
+         (multiple-value-bind (item-vector expected)
+             (%ensure-token-set-vector ,(string in-name) items)
+           (satisfies-token
+            (lambda (token)
+              ,(if nilable
+                   `(let ((value (,accessor token)))
+                      (and value (position value item-vector :test ,test)))
+                   `(position (,accessor token) item-vector :test ,test)))
+            :expected-name expected)))
+       (defun ,not-in-name (&rest items)
+         ,not-in-doc
+         (multiple-value-bind (item-vector expected)
+             (%ensure-token-set-vector ,(string not-in-name) items)
+           (satisfies-token
+            (lambda (token)
+              ,(if nilable
+                   `(let ((value (,accessor token)))
+                      (not (and value (position value item-vector :test ,test))))
+                   `(not (position (,accessor token) item-vector :test ,test))))
+            :expected-name (cons :not expected)))))))
+
+(define-token-set-predicate type token-type
+  :in-doc
   "Match a single token whose TOKEN-TYPE is one of TYPES.
 
 The failure's expected form is the list of TYPES, mirroring how ALT reports a
 merged set of alternatives, e.g. (TOKEN-TYPE-IN :PLUS :MINUS) expects
 (:PLUS :MINUS)."
-  (multiple-value-bind (type-vector expected)
-      (%ensure-token-set-vector "TOKEN-TYPE-IN" types)
-    (satisfies-token (lambda (token)
-                       (position (token-type token) type-vector))
-                     :expected-name expected)))
-
-(defun token-text-in (&rest texts)
-  "Match a single token whose TOKEN-TEXT is STRING= to one of TEXTS.
-
-The text counterpart to TOKEN-TYPE-IN, for matching a set of concrete lexemes
-(keywords, operators) without registering a rule per word. The failure's expected
-form is the list of TEXTS."
-  (multiple-value-bind (text-vector expected)
-      (%ensure-token-set-vector "TOKEN-TEXT-IN" texts)
-    (satisfies-token (lambda (token)
-                       (let ((text (token-text token)))
-                         (and text
-                              (position text text-vector :test #'string=))))
-                     :expected-name expected)))
-
-(defun token-type-not-in (&rest types)
+  :not-in-doc
   "Match a single token whose TOKEN-TYPE is NONE of TYPES (the complement of
 TOKEN-TYPE-IN).
 
 Fails at end of input, and on a token whose type is a member of TYPES. Useful for
 `any token except a closing bracket`-style skipping without spelling out every
-allowed type. The failure's expected form is (:NOT . TYPES)."
-  (multiple-value-bind (type-vector expected)
-      (%ensure-token-set-vector "TOKEN-TYPE-NOT-IN" types)
-    (satisfies-token (lambda (token)
-                       (not (position (token-type token) type-vector)))
-                     :expected-name (cons :not expected))))
+allowed type. The failure's expected form is (:NOT . TYPES).")
 
-(defun token-text-not-in (&rest texts)
+(define-token-set-predicate text token-text
+  :test #'string= :nilable t
+  :in-doc
+  "Match a single token whose TOKEN-TEXT is STRING= to one of TEXTS.
+
+The text counterpart to TOKEN-TYPE-IN, for matching a set of concrete lexemes
+(keywords, operators) without registering a rule per word. The failure's expected
+form is the list of TEXTS."
+  :not-in-doc
   "Match a single token whose TOKEN-TEXT is STRING= to NONE of TEXTS (the
 complement of TOKEN-TEXT-IN).
 
 A token with NIL text matches (it cannot equal any of TEXTS). Fails at end of
 input and on a token whose text is one of TEXTS. The failure's expected form is
-(:NOT . TEXTS)."
-  (multiple-value-bind (text-vector expected)
-      (%ensure-token-set-vector "TOKEN-TEXT-NOT-IN" texts)
-    (satisfies-token (lambda (token)
-                       (let ((text (token-text token)))
-                         (not (and text
-                                   (position text text-vector :test #'string=)))))
-                     :expected-name (cons :not expected))))
+(:NOT . TEXTS).")
 
-(defun token-value-in (&rest values)
+(define-token-set-predicate value token-value
+  :in-doc
   "Match a single token whose TOKEN-VALUE is EQL to one of VALUES.
 
 The value counterpart to TOKEN-TYPE-IN / TOKEN-TEXT-IN, for matching a set of
 decoded payloads (interned keywords, small integers, ...). The failure's expected
 form is the list of VALUES."
-  (multiple-value-bind (value-vector expected)
-      (%ensure-token-set-vector "TOKEN-VALUE-IN" values)
-    (satisfies-token (lambda (token)
-                       (position (token-value token) value-vector))
-                     :expected-name expected)))
-
-(defun token-value-not-in (&rest values)
+  :not-in-doc
   "Match a single token whose TOKEN-VALUE is EQL to NONE of VALUES (the complement
 of TOKEN-VALUE-IN). Fails at end of input and on a token whose value is a member
-of VALUES. The failure's expected form is (:NOT . VALUES)."
-  (multiple-value-bind (value-vector expected)
-      (%ensure-token-set-vector "TOKEN-VALUE-NOT-IN" values)
-    (satisfies-token (lambda (token)
-                       (not (position (token-value token) value-vector)))
-                     :expected-name (cons :not expected))))
+of VALUES. The failure's expected form is (:NOT . VALUES).")
 
 (defun take-while (predicate &key (expected-name :take-while))
   "Match zero or more consecutive tokens satisfying PREDICATE, returning the list

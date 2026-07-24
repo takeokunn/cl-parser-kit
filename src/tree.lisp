@@ -48,34 +48,6 @@ trees.")
              :count count
              :limit *maximum-tree-nodes*))))
 
-(defun %tree-children-list (children)
-  (loop with seen = (make-hash-table :test 'eq)
-        with tail = children
-        with items = '()
-        while tail
-        do (cond
-             ((consp tail)
-              (when (gethash tail seen)
-                (error 'tree-child-list-invalid :kind :circular))
-              (setf (gethash tail seen) t)
-              (push (car tail) items)
-              (setf tail (cdr tail)))
-             (t
-              (error 'tree-child-list-invalid :kind :improper)))
-        finally (return (nreverse items))))
-
-(defun %validate-tree-child-list (children)
-  (loop with seen = (make-hash-table :test 'eq)
-        for tail = children then (cdr tail)
-        while tail
-        do (cond
-             ((consp tail)
-              (when (gethash tail seen)
-                (error 'tree-child-list-invalid :kind :circular))
-              (setf (gethash tail seen) t))
-             (t
-              (error 'tree-child-list-invalid :kind :improper)))))
-
 (defmacro %do-tree-children ((child children &optional result) &body body)
   (let ((tail (gensym "TAIL"))
         (seen (gensym "SEEN")))
@@ -92,6 +64,20 @@ trees.")
                 (t
                  (error 'tree-child-list-invalid :kind :improper)))
            finally (return ,result))))
+
+(defun %tree-children-list (children)
+  "Same cycle-detecting walk as %DO-TREE-CHILDREN, collecting each child into a
+fresh list -- the two functional (non-macro) forms of that walk,
+%TREE-CHILDREN-LIST (collects) and %VALIDATE-TREE-CHILD-LIST (validates only),
+differ from each other and from %DO-TREE-CHILDREN's macro-generated call sites
+only in what happens per child, never in the walk itself."
+  (let ((items '()))
+    (%do-tree-children (child children (nreverse items))
+      (push child items))))
+
+(defun %validate-tree-child-list (children)
+  (%do-tree-children (child children)
+    (declare (ignore child))))
 
 (defun %tree-node-children (node children-fn)
   (%tree-children-list (funcall children-fn node)))
@@ -165,6 +151,28 @@ START/END offsets, data with TEST)."
                    (and a b
                         (eql (span-start a) (span-start b))
                         (eql (span-end a) (span-end b)))))
+             (children-equal-p (a b depth)
+               ;; Named separately from NODE-EQUAL's checklist below so that
+               ;; checklist reads as "type, value, span?, data?, children"
+               ;; without this pairwise-walk's mechanics interrupting it.
+               (let ((left-children (funcall children-fn a))
+                     (right-children (funcall children-fn b)))
+                 (%validate-tree-child-list left-children)
+                 (%validate-tree-child-list right-children)
+                 (loop with left-tail = left-children
+                       with right-tail = right-children
+                       do (cond
+                            ((and (null left-tail) (null right-tail))
+                             (return t))
+                            ((or (null left-tail) (null right-tail))
+                             (return nil))
+                            ((not (node-equal (car left-tail)
+                                              (car right-tail)
+                                              (1+ depth)))
+                             (return nil))
+                            (t
+                             (setf left-tail (cdr left-tail)
+                                   right-tail (cdr right-tail)))))))
              (node-equal (a b depth)
                (%check-tree-depth-limit depth)
                (%check-tree-node-limit state)
@@ -174,24 +182,7 @@ START/END offsets, data with TEST)."
                         (span-equal (funcall span-fn a) (funcall span-fn b)))
                     (or (not include-data)
                         (funcall test (funcall data-fn a) (funcall data-fn b)))
-                    (let ((left-children (funcall children-fn a))
-                          (right-children (funcall children-fn b)))
-                      (%validate-tree-child-list left-children)
-                      (%validate-tree-child-list right-children)
-                      (loop with left-tail = left-children
-                            with right-tail = right-children
-                            do (cond
-                                 ((and (null left-tail) (null right-tail))
-                                  (return t))
-                                 ((or (null left-tail) (null right-tail))
-                                  (return nil))
-                                 ((not (node-equal (car left-tail)
-                                                   (car right-tail)
-                                                   (1+ depth)))
-                                  (return nil))
-                                 (t
-                                  (setf left-tail (cdr left-tail)
-                                        right-tail (cdr right-tail)))))))))
+                    (children-equal-p a b depth))))
       (node-equal left right 1))))
 
 (defun %tree-find (node predicate children-fn &optional (depth 1)
@@ -259,6 +250,17 @@ children."
                                  (%tree-node-children node children-fn))))
     (funcall function (funcall rebuild-fn node mapped-children))))
 
+(defun %tree-node-label (node type-fn value-fn)
+  "Render NODE as \"TYPE VALUE\" (via ~S, not ~A, so a keyword type keeps its
+colon and a string value keeps its quotes -- the render stays
+readable/faithful), or just \"TYPE\" when VALUE is NIL. Shared by
+%TREE->STRING and %TREE->DOT, which differ only in whether the result is
+written directly to a stream or escaped for a DOT label first."
+  (let ((value (funcall value-fn node)))
+    (if value
+        (format nil "~S ~S" (funcall type-fn node) value)
+        (format nil "~S" (funcall type-fn node)))))
+
 (defun %tree->string (node type-fn value-fn children-fn &optional (indent 0))
   "Render NODE and its descendants as a human-readable indented tree, one node per
 line: TYPE, followed by VALUE (via ~S, so strings and keywords print readably)
@@ -272,12 +274,7 @@ the starting depth. No trailing newline is emitted."
                  (dotimes (level indent-level)
                    (declare (ignorable level))
                    (write-string "  " out))
-                 (let ((value (funcall value-fn current)))
-                   ;; ~S (not ~A) so a keyword type keeps its colon and a string
-                   ;; value keeps its quotes -- the render stays readable/faithful.
-                   (if value
-                       (format out "~S ~S" (funcall type-fn current) value)
-                       (format out "~S" (funcall type-fn current))))
+                 (write-string (%tree-node-label current type-fn value-fn) out)
                  (%do-tree-children (child (funcall children-fn current))
                    (terpri out)
                    (emit child (1+ indent-level) (1+ depth)))))
@@ -303,10 +300,7 @@ pre-order; the result is a complete `digraph { ... }` document."
     (with-output-to-string (out)
       (format out "digraph ~A {~%" graph-name)
       (labels ((label-of (current)
-                 (let ((value (funcall value-fn current)))
-                   (if value
-                       (format nil "~S ~S" (funcall type-fn current) value)
-                       (format nil "~S" (funcall type-fn current)))))
+                 (%tree-node-label current type-fn value-fn))
                (emit (current depth)
                  (%check-tree-depth-limit depth)
                  (%check-tree-node-limit state)
@@ -351,38 +345,3 @@ MAKE-CST-NODE (a &key TYPE VALUE CHILDREN SPAN DATA function)."
                                 (%tree-children-list children))
              :span (%plist->span span)
              :data data)))
-
-(defun %tree-node-constructor-symbol (name)
-  (intern (format nil "MAKE-~A"
-                  (string-upcase (symbol-name name)))
-          (symbol-package name)))
-
-(defun %tree-node-accessor-symbol (name slot)
-  (intern (format nil "~A-~A"
-                  (string-upcase (symbol-name name))
-                  (string-upcase (symbol-name slot)))
-          (symbol-package name)))
-
-(defun %tree-node-sexp-symbol (name)
-  (intern (format nil "~A->SEXP"
-                  (string-upcase (symbol-name name)))
-          (symbol-package name)))
-
-(defmacro define-tree-node-family (name)
-  `(progn
-     (defstruct (,name (:constructor ,(%tree-node-constructor-symbol name)
-                                     (&key type value children span data)))
-       type
-       value
-       children
-       span
-       data)
-     (defun ,(%tree-node-sexp-symbol name) (node &key include-span include-data)
-       (%tree-node->sexp node
-                         #',(%tree-node-accessor-symbol name 'type)
-                         #',(%tree-node-accessor-symbol name 'value)
-                         #',(%tree-node-accessor-symbol name 'children)
-                         #',(%tree-node-accessor-symbol name 'span)
-                         #',(%tree-node-accessor-symbol name 'data)
-                         :include-span include-span
-                         :include-data include-data))))

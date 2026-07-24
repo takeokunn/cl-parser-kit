@@ -22,19 +22,12 @@ adversarially huge rule lists at the public tokenizer boundary.")
   "Maximum number of literal alternatives accepted by rule constructors such as
 MAKE-OPERATOR-RULE before signaling TOKENIZER-RESOURCE-LIMIT-EXCEEDED.")
 
-(define-condition tokenizer-resource-limit-exceeded (error)
-  ((kind :initarg :kind :reader tokenizer-resource-limit-exceeded-kind)
-   (value :initarg :value :reader tokenizer-resource-limit-exceeded-value)
-   (limit :initarg :limit :reader tokenizer-resource-limit-exceeded-limit))
-  (:report (lambda (condition stream)
-             (format stream "Tokenizer resource limit exceeded: ~A is ~A, limit is ~A"
-                     (tokenizer-resource-limit-exceeded-kind condition)
-                     (tokenizer-resource-limit-exceeded-value condition)
-                     (tokenizer-resource-limit-exceeded-limit condition))))
-  (:documentation "Signaled by TOKENIZE and tokenizer rule constructors when a
+(define-resource-limit-condition tokenizer-resource-limit-exceeded
+    "Tokenizer resource limit exceeded: ~A is ~A, limit is ~A"
+  :documentation "Signaled by TOKENIZE and tokenizer rule constructors when a
 public tokenizer boundary exceeds its configured resource limits. Catchable so
 embedders can turn a hostile input into a diagnostic instead of an unbounded
-allocation."))
+allocation.")
 
 (defstruct (token-rule (:constructor make-token-rule
                             (&key type matcher skip-p)))
@@ -50,25 +43,27 @@ allocation."))
 (defun token-rule-match (rule source index)
   (funcall (token-rule-matcher rule) source index))
 
-(defun %ensure-tokenizer-rule-vector (rules)
-  (multiple-value-bind (stream rule-count too-many-p)
-      (ensure-vector-up-to rules *maximum-tokenizer-rules*)
-    (when too-many-p
-      (error 'tokenizer-resource-limit-exceeded
-             :kind :rule-count
-             :value rule-count
-             :limit *maximum-tokenizer-rules*))
-    stream))
-
-(defun %ensure-tokenizer-rule-alternatives-vector (alternatives kind)
-  (multiple-value-bind (stream alternative-count too-many-p)
-      (ensure-vector-up-to alternatives *maximum-tokenizer-rule-alternatives*)
+(defun %ensure-vector-within-tokenizer-limit (items limit kind)
+  "Coerce ITEMS to a vector via ENSURE-VECTOR-UP-TO, signalling
+TOKENIZER-RESOURCE-LIMIT-EXCEEDED (tagged KIND) instead of returning one
+longer than LIMIT. Shared by %ENSURE-TOKENIZER-RULE-VECTOR and
+%ENSURE-TOKENIZER-RULE-ALTERNATIVES-VECTOR, which differ only in which
+limit/kind applies."
+  (multiple-value-bind (stream count too-many-p)
+      (ensure-vector-up-to items limit)
     (when too-many-p
       (error 'tokenizer-resource-limit-exceeded
              :kind kind
-             :value alternative-count
-             :limit *maximum-tokenizer-rule-alternatives*))
+             :value count
+             :limit limit))
     stream))
+
+(defun %ensure-tokenizer-rule-vector (rules)
+  (%ensure-vector-within-tokenizer-limit rules *maximum-tokenizer-rules* :rule-count))
+
+(defun %ensure-tokenizer-rule-alternatives-vector (alternatives kind)
+  (%ensure-vector-within-tokenizer-limit
+   alternatives *maximum-tokenizer-rule-alternatives* kind))
 
 (defun %tokenize-emit (tokens source type text value start end
                        start-line start-column end-line end-column)
@@ -167,4 +162,7 @@ matching rule, or (values nil ...) when none match."
             finally (return (coerce (nreverse tokens) 'vector))))))
 
 (defun tokenize-string (source tokenizer)
+  "Alias for TOKENIZE, named for call sites that read more clearly as
+\"tokenize this string\" than \"tokenize this source\" -- both names are
+public and equivalent; pick whichever reads better at the call site."
   (tokenize source tokenizer))

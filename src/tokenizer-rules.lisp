@@ -38,16 +38,25 @@
                          (funcall value-function
                                   (%string-range source index end))))))
 
+(defmacro %token-rule (matcher)
+  "Construct a TOKEN-RULE from the enclosing rule constructor's own TYPE and
+SKIP-P parameters (every constructor in this library names them exactly
+that) plus MATCHER, a (SOURCE INDEX) matcher lambda expression. Removes the
+:TYPE TYPE :SKIP-P SKIP-P boilerplate every rule constructor in this file
+and its siblings (TOKENIZER-RULES-TEXT.LISP, TOKENIZER-RULES-EXTRA.LISP)
+otherwise repeats -- composable rather than wrapping the whole DEFUN, so it
+fits equally well whether MATCHER is a bare lambda or one built up inside a
+LET/LET* of precomputed bindings."
+  `(make-token-rule :type type :skip-p skip-p :matcher ,matcher))
+
 (defun make-literal-rule (type literal &key skip-p)
   (%ensure-non-empty-string literal "literal")
-  (make-token-rule
-   :type type
-   :skip-p skip-p
-   :matcher (lambda (source index)
-              (multiple-value-bind (matched-p literal-length text value)
-                  (%match-literal-token source index literal)
-                (when matched-p
-                  (values t literal-length text value))))))
+  (%token-rule
+   (lambda (source index)
+     (multiple-value-bind (matched-p literal-length text value)
+         (%match-literal-token source index literal)
+       (when matched-p
+         (values t literal-length text value))))))
 
 (defun make-keyword-rule (type literal &key skip-p (identifier-char-predicate #'identifier-char-p)
                                           (case-sensitive t))
@@ -60,36 +69,32 @@ LITERAL either way. IDENTIFIER-CHAR-PREDICATE decides what counts as a flanking
 identifier character."
   (%ensure-non-empty-string literal "literal")
   (let ((test (if case-sensitive #'string= #'string-equal)))
-    (make-token-rule
-     :type type
-     :skip-p skip-p
-     :matcher (lambda (source index)
-                (let ((source-length (length source)))
-                  (multiple-value-bind (matched-p literal-length text value end)
-                      (%match-literal-token source index literal test)
-                    (when (and matched-p
-                               (or (= index 0)
-                                   (not (funcall identifier-char-predicate
-                                                 (char source (1- index)))))
-                               (or (= end source-length)
-                                   (not (funcall identifier-char-predicate
-                                                 (char source end)))))
-                      (values t literal-length text value))))))))
+    (%token-rule
+     (lambda (source index)
+       (let ((source-length (length source)))
+         (multiple-value-bind (matched-p literal-length text value end)
+             (%match-literal-token source index literal test)
+           (when (and matched-p
+                      (or (= index 0)
+                          (not (funcall identifier-char-predicate
+                                        (char source (1- index)))))
+                      (or (= end source-length)
+                          (not (funcall identifier-char-predicate
+                                        (char source end)))))
+             (values t literal-length text value))))))))
 
 (defun make-whitespace-rule (&key (type :whitespace) skip-p)
-  (make-token-rule
-   :type type
-   :skip-p skip-p
-   :matcher (lambda (source index)
-              (let ((end (%scan-while source index #'char-whitespace-p)))
-                (when (> end index)
-                  ;; The tokenizer never reads TEXT/VALUE for a skipped match
-                  ;; (see %TOKENIZE-RULE-MATCH), so a skipped run of
-                  ;; whitespace -- usually the bulk of the source -- avoids
-                  ;; both the %STRING-RANGE and %TRIM-RANGE subseq copies.
-                  (if skip-p
-                      (values t (- end index) nil nil)
-                      (%emit-token-match source index end (%trim-range source index end))))))))
+  (%token-rule
+   (lambda (source index)
+     (let ((end (%scan-while source index #'char-whitespace-p)))
+       (when (> end index)
+         ;; The tokenizer never reads TEXT/VALUE for a skipped match
+         ;; (see %TOKENIZE-RULE-MATCH), so a skipped run of
+         ;; whitespace -- usually the bulk of the source -- avoids
+         ;; both the %STRING-RANGE and %TRIM-RANGE subseq copies.
+         (if skip-p
+             (values t (- end index) nil nil)
+             (%emit-token-match source index end (%trim-range source index end))))))))
 
 (defun %coerce-char-predicate (spec)
   "Coerce SPEC into a single-character predicate: a CHARACTER matches itself, a
@@ -108,45 +113,39 @@ The token TEXT is the single matched character; its VALUE is (FUNCALL
 VALUE-FUNCTION text). Handy for punctuation and single-character operators that do
 not need MAKE-LITERAL-RULE's multi-character matching."
   (let ((predicate (%coerce-char-predicate spec)))
-    (make-token-rule
-     :type type
-     :skip-p skip-p
-     :matcher (lambda (source index)
-                (when (and (< index (length source))
-                           (funcall predicate (char source index)))
-                  (if skip-p
-                      (values t 1 nil nil)
-                      (let ((text (%string-range source index (1+ index))))
-                        (values t 1 text (funcall value-function text)))))))))
+    (%token-rule
+     (lambda (source index)
+       (when (and (< index (length source))
+                  (funcall predicate (char source index)))
+         (if skip-p
+             (values t 1 nil nil)
+             (let ((text (%string-range source index (1+ index))))
+               (values t 1 text (funcall value-function text)))))))))
 
 (defun make-predicate-rule (type predicate &key (min-length 1) skip-p (value-function #'identity))
   (check-type min-length (integer 1))
-  (make-token-rule
-   :type type
-   :skip-p skip-p
-   :matcher (lambda (source index)
-              (let ((end (%scan-while source index predicate)))
-                (when (>= (- end index) min-length)
-                  (if skip-p
-                      (values t (- end index) nil nil)
-                      (%emit-token-match source index end
-                                         (funcall value-function
-                                                  (%string-range source index end)))))))))
+  (%token-rule
+   (lambda (source index)
+     (let ((end (%scan-while source index predicate)))
+       (when (>= (- end index) min-length)
+         (if skip-p
+             (values t (- end index) nil nil)
+             (%emit-token-match source index end
+                                (funcall value-function
+                                         (%string-range source index end)))))))))
 
 (defun make-identifier-rule (&key (type :identifier)
                                   skip-p
                                   (start-predicate #'identifier-start-char-p)
                                   (continue-predicate #'identifier-char-p))
-  (make-token-rule
-   :type type
-   :skip-p skip-p
-   :matcher (lambda (source index)
-              (%match-scanned-token
-               source index
-               start-predicate
-               (lambda (source index)
-                 (%scan-while source (1+ index) continue-predicate))
-               #'identity))))
+  (%token-rule
+   (lambda (source index)
+     (%match-scanned-token
+      source index
+      start-predicate
+      (lambda (source index)
+        (%scan-while source (1+ index) continue-predicate))
+      #'identity))))
 
 (defparameter *maximum-number-lexeme-length* 1024
   "Maximum character length MAKE-NUMBER-RULE scans for a single numeric
@@ -174,31 +173,29 @@ with PARSE-INTEGER only."
         (parse-integer text))))
 
 (defun make-number-rule (&key (type :number) skip-p)
-  (make-token-rule
-   :type type
-   :skip-p skip-p
-   :matcher (lambda (source index)
-              (%match-scanned-token
-               source index
-               #'digit-char-p
-               (lambda (source index)
-                 (let ((length (length source)))
-                   ;; Accept at most one interior decimal point so a hostile run
-                   ;; like "1.2.3.4" tokenizes as separate numbers rather than a
-                   ;; single malformed lexeme.
-                   (loop with end = (1+ index)
-                         with seen-dot = nil
-                         while (and (< end length)
-                                    (< (- end index) *maximum-number-lexeme-length*))
-                         do (let ((char (char source end)))
-                              (cond
-                                ((digit-char-p char) (incf end))
-                                ((and (char= char #\.)
-                                      (not seen-dot)
-                                      (< (1+ end) length)
-                                      (digit-char-p (char source (1+ end))))
-                                 (setf seen-dot t)
-                                 (incf end))
-                                (t (loop-finish))))
-                         finally (return end))))
-               #'%parse-decimal-text))))
+  (%token-rule
+   (lambda (source index)
+     (%match-scanned-token
+      source index
+      #'digit-char-p
+      (lambda (source index)
+        (let ((length (length source)))
+          ;; Accept at most one interior decimal point so a hostile run
+          ;; like "1.2.3.4" tokenizes as separate numbers rather than a
+          ;; single malformed lexeme.
+          (loop with end = (1+ index)
+                with seen-dot = nil
+                while (and (< end length)
+                           (< (- end index) *maximum-number-lexeme-length*))
+                do (let ((char (char source end)))
+                     (cond
+                       ((digit-char-p char) (incf end))
+                       ((and (char= char #\.)
+                             (not seen-dot)
+                             (< (1+ end) length)
+                             (digit-char-p (char source (1+ end))))
+                        (setf seen-dot t)
+                        (incf end))
+                       (t (loop-finish))))
+                finally (return end))))
+      #'%parse-decimal-text))))

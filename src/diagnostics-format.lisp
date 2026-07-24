@@ -33,15 +33,8 @@ with an ellipsis; rebind or SETF to show more context.")
 NIL entries are skipped for rendering but still counted so nil-only or circular
 batches terminate.")
 
-(define-condition diagnostic-resource-limit-exceeded (error)
-  ((kind :initarg :kind :reader diagnostic-resource-limit-exceeded-kind)
-   (value :initarg :value :reader diagnostic-resource-limit-exceeded-value)
-   (limit :initarg :limit :reader diagnostic-resource-limit-exceeded-limit))
-  (:report (lambda (condition stream)
-             (format stream "Diagnostic ~A count ~D exceeds maximum ~D"
-                     (diagnostic-resource-limit-exceeded-kind condition)
-                     (diagnostic-resource-limit-exceeded-value condition)
-                     (diagnostic-resource-limit-exceeded-limit condition)))))
+(define-resource-limit-condition diagnostic-resource-limit-exceeded
+    "Diagnostic ~A count ~D exceeds maximum ~D")
 
 (defun %bounded-line-text (source start end)
   (let ((capped-end (min end (+ start *maximum-diagnostic-line-length*))))
@@ -73,14 +66,15 @@ batches terminate.")
     (coerce (nreverse starts) 'vector)))
 
 (defun %source-line-starts (source)
-  (if *diagnostic-source-line-start-cache*
-      (multiple-value-bind (starts presentp)
-          (gethash source *diagnostic-source-line-start-cache*)
-        (if presentp
-            starts
-            (setf (gethash source *diagnostic-source-line-start-cache*)
-                  (%compute-source-line-starts source))))
-      (%compute-source-line-starts source)))
+  ;; Only ever called (see %SOURCE-LINE-AT, below) inside a
+  ;; *DIAGNOSTIC-SOURCE-LINE-START-CACHE* WHEN guard, so the cache variable is
+  ;; always truthy by the time this runs -- no direct, uncached path exists.
+  (multiple-value-bind (starts presentp)
+      (gethash source *diagnostic-source-line-start-cache*)
+    (if presentp
+        starts
+        (setf (gethash source *diagnostic-source-line-start-cache*)
+              (%compute-source-line-starts source)))))
 
 (defun %bounded-line-text-from-start (source start)
   (let* ((length (length source))
@@ -181,30 +175,16 @@ batches terminate.")
   (prin1 (fix-it-replacement fix-it) out))
 
 (defun %write-diagnostic-related-items (items kind writer out)
-  (labels ((limit-exceeded (value)
-             (error 'diagnostic-resource-limit-exceeded
-                    :kind kind
-                    :value value
-                    :limit *maximum-diagnostic-related-count*)))
-    (if (consp items)
-        (loop with count = 0
-              with seen = (make-hash-table :test 'eq)
-              for tail = items then (cdr tail)
-              while (consp tail)
-              for item = (car tail)
-              do (when (gethash tail seen)
-                   (limit-exceeded (1+ *maximum-diagnostic-related-count*)))
-                 (setf (gethash tail seen) t)
-                 (incf count)
-                 (when (> count *maximum-diagnostic-related-count*)
-                   (limit-exceeded count))
-                 (when item
-                   (funcall writer out item))
-              finally
-                 (unless (null tail)
-                   (limit-exceeded (1+ *maximum-diagnostic-related-count*))))
-        (when items
-          (funcall writer out items)))))
+  (if (consp items)
+      (%walk-bounded-list items *maximum-diagnostic-related-count*
+                          (lambda (count)
+                            (error 'diagnostic-resource-limit-exceeded
+                                   :kind kind
+                                   :value count
+                                   :limit *maximum-diagnostic-related-count*))
+                          (lambda (item) (when item (funcall writer out item))))
+      (when items
+        (funcall writer out items))))
 
 (defun %write-diagnostic (diagnostic out)
   (write-string (string-downcase (symbol-name (diagnostic-kind diagnostic))) out)

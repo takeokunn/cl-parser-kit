@@ -16,7 +16,7 @@
 
 (defmacro define-delimited-separated-parser (name separator-parser)
   `(defun ,name (open parser separator close)
-     (%delimited-boundary open (,separator-parser parser separator) close)))
+     (between open (,separator-parser parser separator) close)))
 
 (define-parser-function label (parser expected) expected
   (%run-parser/if-success
@@ -164,4 +164,3 @@ for quotes, pipes, or any symmetric bracket."
                                                   token
                                                   :eoi))))))
 
-(defun %delimited-boundary (open body close) (between open body close))

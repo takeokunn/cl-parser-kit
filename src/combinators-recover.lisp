@@ -50,11 +50,10 @@ guard when RECOVERY has nothing left to skip."
    (lambda (failure failed-next)
      (declare (ignore failed-next))
      (let ((resume (max position (parse-failure-position failure))))
-       (multiple-value-bind (ok value next result)
-           (run-parser recovery input resume)
-         (if ok
-             (%success value
-                       next
-                       (%merge-diagnostics (parse-failure-diagnostics failure)
-                                           result))
-             (%failure-from result)))))))
+       (%run-parser/if-success
+        recovery input resume
+        (lambda (value next result)
+          (%success value
+                    next
+                    (%merge-diagnostics (parse-failure-diagnostics failure)
+                                        result))))))))

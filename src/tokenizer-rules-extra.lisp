@@ -35,27 +35,25 @@ into separate tokens rather than building a multi-megabyte bignum."
   (check-type radix (integer 2 36))
   (let* ((prefix (or prefix ""))
          (prefix-length (length prefix)))
-    (make-token-rule
-     :type type
-     :skip-p skip-p
-     :matcher (lambda (source index)
-                (let* ((source-length (length source))
-                       (digits-start (+ index prefix-length)))
-                  (when (and (<= digits-start source-length)
-                             (or (zerop prefix-length)
-                                 (string-equal prefix source
-                                               :start2 index :end2 digits-start)))
-                    (let ((end (%scan-radix-digits source digits-start radix
-                                                   (min source-length
-                                                        (+ digits-start
-                                                           *maximum-number-lexeme-length*)))))
-                      (when (> end digits-start)
-                        (if skip-p
-                            (values t (- end index) nil nil)
-                            (values t (- end index)
-                                    (%string-range source index end)
-                                    (parse-integer source :start digits-start :end end
-                                                          :radix radix)))))))))))
+    (%token-rule
+     (lambda (source index)
+       (let* ((source-length (length source))
+              (digits-start (+ index prefix-length)))
+         (when (and (<= digits-start source-length)
+                    (or (zerop prefix-length)
+                        (string-equal prefix source
+                                      :start2 index :end2 digits-start)))
+           (let ((end (%scan-radix-digits source digits-start radix
+                                          (min source-length
+                                               (+ digits-start
+                                                  *maximum-number-lexeme-length*)))))
+             (when (> end digits-start)
+               (if skip-p
+                   (values t (- end index) nil nil)
+                   (values t (- end index)
+                           (%string-range source index end)
+                           (parse-integer source :start digits-start :end end
+                                                 :radix radix)))))))))))
 
 (defparameter *maximum-number-exponent* 1000
   "Maximum absolute base-10 exponent MAKE-FLOAT-RULE honours before saturating.
@@ -77,12 +75,61 @@ magnitude on overflow instead of signalling (underflow already yields zero)."
                     (long-float most-positive-long-float))))
         (if (minusp rational) (- most) most)))))
 
-(defun %scan-plain-digits (source index limit-end)
-  (declare (type string source) (type fixnum index limit-end))
-  (loop with end of-type fixnum = index
-        while (and (< end limit-end) (digit-char-p (char source end)))
-        do (incf end)
-        finally (return end)))
+(defun %scan-float-fractional-part (source after-int limit-end)
+  "If a '.' at AFTER-INT is followed by at least one digit, scan the fractional
+digit run. Returns (values frac-start frac-end new-after-int); FRAC-START is
+NIL and FRAC-END/NEW-AFTER-INT both equal AFTER-INT when no fractional part is
+present, so a caller can test FRAC-START alone to know whether one matched."
+  (if (and (< after-int limit-end)
+           (char= (char source after-int) #\.)
+           (< (1+ after-int) limit-end)
+           (digit-char-p (char source (1+ after-int))))
+      (let* ((frac-start (1+ after-int))
+             (frac-end (%scan-radix-digits source frac-start 10 limit-end)))
+        (values frac-start frac-end frac-end))
+      (values nil after-int after-int)))
+
+(defun %scan-float-exponent-part (source after-int limit-end)
+  "If an 'e'/'E' at AFTER-INT is followed by an optional sign and at least one
+digit, scan the exponent digit run. Returns (values has-exp-p exp-sign
+exp-start exp-end new-after-int); HAS-EXP-P is NIL and EXP-END/NEW-AFTER-INT
+both equal AFTER-INT when no exponent is present (a bare 'e' with no digits
+after it, or after an optional sign, does not count as one)."
+  (let ((p (1+ after-int))
+        (exp-sign 1))
+    (if (and (< after-int limit-end) (member (char source after-int) '(#\e #\E)))
+        (progn
+          (when (and (< p limit-end) (member (char source p) '(#\+ #\-)))
+            (when (char= (char source p) #\-) (setf exp-sign -1))
+            (incf p))
+          (if (and (< p limit-end) (digit-char-p (char source p)))
+              (let ((exp-end (%scan-radix-digits source p 10 limit-end)))
+                (values t exp-sign p exp-end exp-end))
+              (values nil 1 nil after-int after-int)))
+        (values nil 1 nil after-int after-int))))
+
+(defun %float-lexeme-value (source int-start int-end frac-start frac-end
+                            has-exp-p exp-sign exp-start exp-end sign float-type)
+  "Combine the integer, optional fractional, and optional exponent digit runs
+%SCAN-FLOAT-FRACTIONAL-PART / %SCAN-FLOAT-EXPONENT-PART located into a single
+FLOAT-TYPE value, applying SIGN and saturating on overflow via
+%COERCE-BOUNDED-FLOAT (see MAKE-FLOAT-RULE for the security rationale: this
+never calls the Lisp reader, only PARSE-INTEGER and bounded arithmetic)."
+  (let* ((int-value (parse-integer source :start int-start :end int-end))
+         (frac-value (if frac-start
+                         (/ (parse-integer source :start frac-start :end frac-end)
+                            (expt 10 (- frac-end frac-start)))
+                         0))
+         (mantissa (* sign (+ int-value frac-value)))
+         (exponent (if has-exp-p
+                       (* exp-sign (parse-integer source :start exp-start :end exp-end))
+                       0))
+         (clamped (max (- *maximum-number-exponent*)
+                       (min *maximum-number-exponent* exponent)))
+         (scaled (if (>= clamped 0)
+                     (* mantissa (expt 10 clamped))
+                     (/ mantissa (expt 10 (- clamped))))))
+    (%coerce-bounded-float scaled float-type)))
 
 (defun make-float-rule (&key (type :float) (float-type 'double-float)
                           (require-fractional t) allow-sign skip-p)
@@ -99,10 +146,7 @@ sign to the parser as a unary operator (otherwise `a-1` would lex `-1`).
 The exponent magnitude is clamped at *MAXIMUM-NUMBER-EXPONENT* and the lexeme
 length at *MAXIMUM-NUMBER-LEXEME-LENGTH*, so no input forces an unbounded bignum;
 the value is produced by PARSE-INTEGER and bounded arithmetic, never the reader."
-  (make-token-rule
-   :type type
-   :skip-p skip-p
-   :matcher
+  (%token-rule
    (lambda (source index)
      (let* ((source-length (length source))
             (limit-end (min source-length (+ index *maximum-number-lexeme-length*)))
@@ -113,57 +157,21 @@ the value is produced by PARSE-INTEGER and bounded arithmetic, never the reader.
          (when (char= (char source cursor) #\-) (setf sign -1))
          (incf cursor))
        (let* ((int-start cursor)
-              (int-end (%scan-plain-digits source cursor limit-end)))
+              (int-end (%scan-radix-digits source cursor 10 limit-end)))
          (when (> int-end int-start)         ; require at least one integer digit
-           (let ((frac-start nil)
-                 (frac-end int-end)
-                 (after-int int-end))
-             ;; Fractional part: '.' followed by at least one digit.
-             (when (and (< after-int limit-end)
-                        (char= (char source after-int) #\.)
-                        (< (1+ after-int) limit-end)
-                        (digit-char-p (char source (1+ after-int))))
-               (setf frac-start (1+ after-int)
-                     frac-end (%scan-plain-digits source (1+ after-int) limit-end)
-                     after-int frac-end))
-             ;; Exponent: [eE] [+-]? digit+.
-             (let ((exp-sign 1)
-                   (exp-start nil)
-                   (exp-end after-int)
-                   (has-exp nil))
-               (when (and (< after-int limit-end)
-                          (member (char source after-int) '(#\e #\E)))
-                 (let ((p (1+ after-int))
-                       (es 1))
-                   (when (and (< p limit-end) (member (char source p) '(#\+ #\-)))
-                     (when (char= (char source p) #\-) (setf es -1))
-                     (incf p))
-                   (when (and (< p limit-end) (digit-char-p (char source p)))
-                     (setf has-exp t exp-sign es exp-start p
-                           exp-end (%scan-plain-digits source p limit-end)
-                           after-int exp-end))))
-               (when (or (not require-fractional) frac-start has-exp)
-                 (let ((end after-int))
-                   (if skip-p
-                       (values t (- end index) nil nil)
-                       (let* ((int-value (parse-integer source :start int-start :end int-end))
-                              (frac-value (if frac-start
-                                              (/ (parse-integer source :start frac-start :end frac-end)
-                                                 (expt 10 (- frac-end frac-start)))
-                                              0))
-                              (mantissa (* sign (+ int-value frac-value)))
-                              (exponent (if has-exp
-                                            (* exp-sign
-                                               (parse-integer source :start exp-start :end exp-end))
-                                            0))
-                              (clamped (max (- *maximum-number-exponent*)
-                                            (min *maximum-number-exponent* exponent)))
-                              (scaled (if (>= clamped 0)
-                                          (* mantissa (expt 10 clamped))
-                                          (/ mantissa (expt 10 (- clamped))))))
-                         (values t (- end index)
-                                 (%string-range source index end)
-                                 (%coerce-bounded-float scaled float-type)))))))))))) ))
+           (multiple-value-bind (frac-start frac-end after-int)
+               (%scan-float-fractional-part source int-end limit-end)
+             (multiple-value-bind (has-exp-p exp-sign exp-start exp-end end)
+                 (%scan-float-exponent-part source after-int limit-end)
+               (when (or (not require-fractional) frac-start has-exp-p)
+                 (if skip-p
+                     (values t (- end index) nil nil)
+                     (values t (- end index)
+                             (%string-range source index end)
+                             (%float-lexeme-value source int-start int-end
+                                                  frac-start frac-end
+                                                  has-exp-p exp-sign exp-start exp-end
+                                                  sign float-type))))))))))))
 
 (defun make-operator-rule (type operators &key skip-p)
   "Match the LONGEST of a set of literal OPERATORS at the current position,
@@ -185,17 +193,15 @@ Every token produced carries TYPE; distinguish operators by their TEXT."
                  (setf (gethash char buckets)
                        (sort operators #'> :key #'length)))
                buckets)
-      (make-token-rule
-       :type type
-       :skip-p skip-p
-       :matcher (lambda (source index)
-                  (let ((source-length (length source)))
-                    (when (< index source-length)
-                      (dolist (operator (gethash (char source index) buckets) nil)
-                        (let* ((operator-length (length operator))
-                               (end (+ index operator-length)))
-                          (when (and (<= end source-length)
-                                     (string= operator source :start2 index :end2 end))
-                            (return (if skip-p
-                                        (values t operator-length nil nil)
-                                        (values t operator-length operator operator)))))))))))))
+      (%token-rule
+       (lambda (source index)
+         (let ((source-length (length source)))
+           (when (< index source-length)
+             (dolist (operator (gethash (char source index) buckets) nil)
+               (let* ((operator-length (length operator))
+                      (end (+ index operator-length)))
+                 (when (and (<= end source-length)
+                            (string= operator source :start2 index :end2 end))
+                   (return (if skip-p
+                               (values t operator-length nil nil)
+                               (values t operator-length operator operator)))))))))))))

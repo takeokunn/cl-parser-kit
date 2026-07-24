@@ -23,6 +23,18 @@ consumes no further input. Use for numbers, identifiers, and other atoms."
      (declare (ignore tokens table))
      (values t (funcall builder token) next nil))))
 
+(defun %parse-pratt-then (tokens table position min-binding-power on-success)
+  "Run PARSE-PRATT and continue via ON-SUCCESS (value next) on success, or
+propagate the failure as-is on failure -- mirroring COMBINATORS.LISP's
+%RUN-PARSER/IF-SUCCESS for the Pratt side. Removes the repeated
+MULTIPLE-VALUE-BIND/IF-OK boilerplate that every registrar below needing a
+sub-expression would otherwise duplicate."
+  (multiple-value-bind (ok value next failure)
+      (parse-pratt tokens table :position position :min-binding-power min-binding-power)
+    (if ok
+        (funcall on-success value next)
+        (values nil nil next failure))))
+
 (defun register-prefix (table key binding-power builder)
   "Register KEY as a unary prefix operator that parses one operand at
 BINDING-POWER and yields (FUNCALL BUILDER operand-value)."
@@ -30,11 +42,10 @@ BINDING-POWER and yields (FUNCALL BUILDER operand-value)."
    table key binding-power
    (lambda (token tokens next table)
      (declare (ignore token))
-     (multiple-value-bind (ok value operand-next failure)
-         (parse-pratt tokens table :position next :min-binding-power binding-power)
-       (if ok
-           (values t (funcall builder value) operand-next nil)
-           (values nil nil operand-next failure))))))
+     (%parse-pratt-then
+      tokens table next binding-power
+      (lambda (value operand-next)
+        (values t (funcall builder value) operand-next nil))))))
 
 (defun %register-infix (table key left-binding-power right-binding-power builder)
   (register-infix-operator
@@ -77,21 +88,18 @@ error expecting it."
    table question-key binding-power
    (lambda (condition token tokens next table)
      (declare (ignore token))
-     (multiple-value-bind (then-ok then-value then-next then-failure)
-         (parse-pratt tokens table :position next :min-binding-power 0)
-       (if (not then-ok)
-           (values nil nil then-next then-failure)
-           (let ((colon (%pratt-token-at tokens then-next)))
-             (if (and colon (eql (%token-key colon) colon-key))
-                 (multiple-value-bind (else-ok else-value else-next else-failure)
-                     (parse-pratt tokens table :position (1+ then-next)
-                                              :min-binding-power binding-power)
-                   (if else-ok
-                       (values t (funcall builder condition then-value else-value)
-                               else-next nil)
-                       (values nil nil else-next else-failure)))
-                 (values nil nil then-next
-                         (%pratt-error then-next colon colon-key)))))))))
+     (%parse-pratt-then
+      tokens table next 0
+      (lambda (then-value then-next)
+        (let ((colon (%pratt-token-at tokens then-next)))
+          (if (and colon (eql (%token-key colon) colon-key))
+              (%parse-pratt-then
+               tokens table (1+ then-next) binding-power
+               (lambda (else-value else-next)
+                 (values t (funcall builder condition then-value else-value)
+                         else-next nil)))
+              (values nil nil then-next
+                      (%pratt-error then-next colon colon-key)))))))))
 
 (defun register-infix-non-assoc (table key binding-power builder)
   "Register KEY as a NON-ASSOCIATIVE binary operator of the given BINDING-POWER:
@@ -107,15 +115,14 @@ with a :NON-ASSOCIATIVE-OPERATOR failure rather than chained."
    table key binding-power
    (lambda (left token tokens next table)
      (declare (ignore token))
-     (multiple-value-bind (right-ok right-value right-next right-failure)
-         (parse-pratt tokens table :position next :min-binding-power (1+ binding-power))
-       (if (not right-ok)
-           (values nil nil right-next right-failure)
-           (let ((following (%pratt-token-at tokens right-next)))
-             (if (and following (eql (%token-key following) key))
-                 (values nil nil right-next
-                         (%pratt-error right-next following :non-associative-operator))
-                 (values t (funcall builder left right-value) right-next nil))))))))
+     (%parse-pratt-then
+      tokens table next (1+ binding-power)
+      (lambda (right-value right-next)
+        (let ((following (%pratt-token-at tokens right-next)))
+          (if (and following (eql (%token-key following) key))
+              (values nil nil right-next
+                      (%pratt-error right-next following :non-associative-operator))
+              (values t (funcall builder left right-value) right-next nil))))))))
 
 (defun register-grouping (table open-key close-key)
   "Register OPEN-KEY / CLOSE-KEY as a matched grouping pair, so OPEN expr CLOSE
@@ -125,12 +132,11 @@ parse failure expecting CLOSE-KEY."
    table open-key 0
    (lambda (token tokens next table)
      (declare (ignore token))
-     (multiple-value-bind (ok value inner-next failure)
-         (parse-pratt tokens table :position next :min-binding-power 0)
-       (if ok
-           (let ((close (%pratt-token-at tokens inner-next)))
-             (if (and close (eql (%token-key close) close-key))
-                 (values t value (1+ inner-next) nil)
-                 (values nil nil inner-next
-                         (%pratt-error inner-next close close-key))))
-           (values nil nil inner-next failure))))))
+     (%parse-pratt-then
+      tokens table next 0
+      (lambda (value inner-next)
+        (let ((close (%pratt-token-at tokens inner-next)))
+          (if (and close (eql (%token-key close) close-key))
+              (values t value (1+ inner-next) nil)
+              (values nil nil inner-next
+                      (%pratt-error inner-next close close-key)))))))))
