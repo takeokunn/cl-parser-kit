@@ -20,13 +20,32 @@ my %counts = (
   expression => [0, 0],
   branch => [0, 0],
 );
+my %adjusted_counts = (
+  expression => [0, 0],
+  branch => [0, 0],
+);
 my $current_directory = '';
+
+# SB-COVER attributes a macro's generated code to its call site, never to the
+# macro's own definition, so a file whose only content is a macro definition
+# (plus helpers used solely by that macro) reads as permanently 0% covered no
+# matter how thoroughly the code it generates is tested elsewhere -- verified
+# for these files by reading their content and confirming every generated
+# function has dedicated call-site tests (see CONTRIBUTING.md, "Coverage
+# Expectations"). ADJUSTED-* below excludes exactly these files from the
+# denominator so the reported percentage reflects instrumentable code only;
+# the gate itself still runs against the raw, unadjusted totals.
+my %macro_attribution_artifact_files = map { $_ => 1 } (
+  'tree-macros.lisp',
+  'package.lisp',
+  'pratt.lisp',
+);
 
 while ($html =~ m{
   <tr\s+class='subheading'><td\s+colspan='7'>([^<]+)</td></tr>
   |
   <tr\s+class='(?:odd|even)'>
-    <td\s+class='text-cell'><a\s+href='[^']+'>[^<]+</a></td>
+    <td\s+class='text-cell'><a\s+href='[^']+'>([^<]+)</a></td>
     <td>(\d+|-)</td><td>(\d+|-)</td><td>[^<]+</td>
     <td>(\d+|-)</td><td>(\d+|-)</td><td>[^<]+</td>
   </tr>
@@ -37,7 +56,8 @@ while ($html =~ m{
   }
   next unless index($current_directory, $source_directory) == 0;
 
-  my @values = ($2, $3, $4, $5);
+  my $filename = $2;
+  my @values = ($3, $4, $5, $6);
   for my $value (@values) {
     $value = 0 if $value eq '-';
   }
@@ -45,6 +65,12 @@ while ($html =~ m{
   $counts{expression}[1] += $values[1];
   $counts{branch}[0] += $values[2];
   $counts{branch}[1] += $values[3];
+
+  next if $macro_attribution_artifact_files{$filename};
+  $adjusted_counts{expression}[0] += $values[0];
+  $adjusted_counts{expression}[1] += $values[1];
+  $adjusted_counts{branch}[0] += $values[2];
+  $adjusted_counts{branch}[1] += $values[3];
 }
 
 my %thresholds = (
@@ -60,6 +86,16 @@ for my $kind (qw(expression branch)) {
     $kind, $covered, $total, $percent, $thresholds{$kind};
   push @failures, "$kind coverage is below $thresholds{$kind}%"
     if $percent < $thresholds{$kind};
+
+  my ($adjusted_covered, $adjusted_total) = @{$adjusted_counts{$kind}};
+  die "macro-attribution exclusion list covers every file with $kind data below "
+      . "$source_directory -- %macro_attribution_artifact_files is too broad; "
+      . "only exclude a file when its own gap, not the whole codebase's, is "
+      . "confirmed artifact\n"
+    unless $adjusted_total;
+  my $adjusted_percent = 100 * $adjusted_covered / $adjusted_total;
+  printf "%s coverage (macro-attribution files excluded): %d/%d (%.2f%%)\n",
+    $kind, $adjusted_covered, $adjusted_total, $adjusted_percent;
 }
 
 die join("\n", @failures), "\n" if @failures;
