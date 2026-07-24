@@ -21,22 +21,18 @@
 
 (it-sequential "pratt-entry-points-enforce-token-count-limit-test"
   (let ((*maximum-parser-tokens* 2))
-    (multiple-value-bind (ok value next failure)
-        (parse-pratt-all (vector (%num 1) (%op :plus "+") (%num 2))
-                         (%builders-table))
-      (declare (ignore value))
-      (expect ok :to-be-falsy)
+    (assert-combinator-failure
+        (parse-pratt-all (vector (%num 1) (%op :plus "+") (%num 2)) (%builders-table))
+        (value next failure)
       (expect next :to-equal 0)
       (expect (parse-failure-expected failure) :to-equal :maximum-parser-tokens)
       (expect (parse-failure-actual failure) :to-equal 3))))
 
 (it-sequential "pratt-entry-points-stop-list-coercion-at-token-count-limit-test"
   (let ((*maximum-parser-tokens* 2))
-    (multiple-value-bind (ok value next failure)
-        (parse-pratt-all (list (%num 1) (%op :plus "+") (%num 2))
-                         (%builders-table))
-      (declare (ignore value))
-      (expect ok :to-be-falsy)
+    (assert-combinator-failure
+        (parse-pratt-all (list (%num 1) (%op :plus "+") (%num 2)) (%builders-table))
+        (value next failure)
       (expect next :to-equal 0)
       (expect (parse-failure-expected failure) :to-equal :maximum-parser-tokens)
       (expect (parse-failure-actual failure) :to-equal 3))))
@@ -65,6 +61,14 @@
       (value next failure)
     (expect value :to-equal -5)))
 
+(it-sequential "pratt-register-prefix-propagates-a-failing-operand-test"
+  ;; A prefix operator with nothing after it must propagate the operand's own
+  ;; parse failure, not just decline or signal a generic error.
+  (assert-combinator-failure
+      (parse-pratt-all (vector (%op :minus "-")) (%builders-table))
+      (value next failure)
+    (expect (parse-failure-expected failure) :to-equal :expression)))
+
 (it-sequential "pratt-register-postfix-parses-suffix-test"
   (assert-combinator-success
       (parse-pratt-all (vector (%num 3) (%op :bang "!")) (%builders-table))
@@ -88,12 +92,19 @@
     (expect value :to-equal 8)))
 
 (it-sequential "pratt-register-grouping-reports-missing-close-test"
-  (multiple-value-bind (ok value next failure)
+  (assert-combinator-failure
       (parse-pratt-all (vector (%op :lparen "(") (%num 1) (%op :plus "+") (%num 2))
                        (%builders-table))
-    (declare (ignore value next))
-    (expect ok :to-be-falsy)
+      (value next failure)
     (expect (parse-failure-expected failure) :to-equal :rparen)))
+
+(it-sequential "pratt-register-grouping-propagates-a-failing-inner-expression-test"
+  ;; Nothing follows "(": the inner expression itself fails to parse, distinct
+  ;; from the missing-close case above where the inner expression parses fine.
+  (assert-combinator-failure
+      (parse-pratt-all (vector (%op :lparen "(")) (%builders-table))
+      (value next failure)
+    (expect (parse-failure-expected failure) :to-equal :expression)))
 
 ;;; REGISTER-TERNARY ----------------------------------------------------------
 
@@ -122,12 +133,28 @@
     (expect value :to-equal '(:if 1 2 (:if 3 4 5)))))
 
 (it-sequential "pratt-register-ternary-reports-missing-colon-test"
-  (multiple-value-bind (ok value next failure)
+  (assert-combinator-failure
       (parse-pratt-all (vector (%num 1) (%op :question "?") (%num 2) (%num 3))
                        (%ternary-table))
-    (declare (ignore value next))
-    (expect ok :to-be-falsy)
+      (value next failure)
     (expect (parse-failure-expected failure) :to-equal :colon)))
+
+(it-sequential "pratt-register-ternary-propagates-a-failing-then-branch-test"
+  ;; Nothing follows "?": the THEN expression itself fails to parse, distinct
+  ;; from the missing-colon case above where THEN parses fine.
+  (assert-combinator-failure
+      (parse-pratt-all (vector (%num 1) (%op :question "?")) (%ternary-table))
+      (value next failure)
+    (expect (parse-failure-expected failure) :to-equal :expression)))
+
+(it-sequential "pratt-register-ternary-propagates-a-failing-else-branch-test"
+  ;; THEN and the colon both parse fine; nothing follows the colon, so the
+  ;; ELSE expression itself fails to parse.
+  (assert-combinator-failure
+      (parse-pratt-all (vector (%num 1) (%op :question "?") (%num 2) (%op :colon ":"))
+                       (%ternary-table))
+      (value next failure)
+    (expect (parse-failure-expected failure) :to-equal :expression)))
 
 ;;; REGISTER-INFIX-NON-ASSOC --------------------------------------------------
 
@@ -153,9 +180,16 @@
     (expect value :to-equal '(:< (:+ 1 2) 3))))
 
 (it-sequential "pratt-register-infix-non-assoc-rejects-chaining-test"
-  (multiple-value-bind (ok value next failure)
+  (assert-combinator-failure
       (parse-pratt-all (vector (%num 1) (%op :lt "<") (%num 2) (%op :lt "<") (%num 3))
                        (%non-assoc-table))
-    (declare (ignore value next))
-    (expect ok :to-be-falsy)
+      (value next failure)
     (expect (parse-failure-expected failure) :to-equal :non-associative-operator)))
+
+(it-sequential "pratt-register-infix-non-assoc-propagates-a-failing-right-operand-test"
+  ;; Nothing follows "<": the right operand itself fails to parse, distinct
+  ;; from the chaining rejection above where the right operand parses fine.
+  (assert-combinator-failure
+      (parse-pratt-all (vector (%num 1) (%op :lt "<")) (%non-assoc-table))
+      (value next failure)
+    (expect (parse-failure-expected failure) :to-equal :expression)))

@@ -3,9 +3,9 @@
   :version "0.2.0"
   :author "takeokunn"
   :license "MIT"
-  :homepage "https://github.com/takeokunn/cl-parser-kit"
-  :bug-tracker "https://github.com/takeokunn/cl-parser-kit/issues"
-  :source-control (:git "https://github.com/takeokunn/cl-parser-kit.git")
+  :homepage "https://github.com/nerima-lisp/cl-parser-kit"
+  :bug-tracker "https://github.com/nerima-lisp/cl-parser-kit/issues"
+  :source-control (:git "https://github.com/nerima-lisp/cl-parser-kit.git")
   :depends-on ("cl-parser-kit" "cl-weave" "cl-prolog/weave")
   :pathname "t"
   :serial t
@@ -58,6 +58,7 @@
                (:file "parser-runtime-test")
                (:file "parser-contract-test")
                (:file "parser-properties-test")
+               (:file "fuzz-test")
                (:file "examples-doc-data")
                (:file "examples-common-support")
                (:file "examples-doc-support")

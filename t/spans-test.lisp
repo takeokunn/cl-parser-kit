@@ -63,6 +63,17 @@
     (expect (span-end-line span) :to-equal 1)
     (expect (span-end-column span) :to-equal 6)))
 
+(it-sequential "make-span-defaults-every-keyword-to-a-zero-width-origin-test"
+  (let ((span (make-span)))
+    (expect (span-source span) :to-be-falsy)
+    (expect (span-start span) :to-equal 0)
+    (expect (span-end span) :to-equal 0)
+    (expect (span-start-line span) :to-equal 1)
+    (expect (span-start-column span) :to-equal 1)
+    (expect (span-end-line span) :to-equal 1)
+    (expect (span-end-column span) :to-equal 1)
+    (expect (span-empty-p span) :to-be-truthy)))
+
 (it-sequential "advance-position-treats-crlf-as-single-line-break-test"
   (multiple-value-bind (line column)
       (cl-parser-kit::advance-position (format nil "a~C~Cb"

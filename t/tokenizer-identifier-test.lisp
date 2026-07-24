@@ -9,6 +9,14 @@
            (%make-tokenizer-token-spec :type :identifier :value "tail?")
            (%make-tokenizer-token-spec :type :identifier :value "plain")))))
 
+(it-sequential "tokenizer-identifier-rule-matcher-declines-at-out-of-bounds-index-test"
+  ;; TOKEN-RULE-MATCHER is public API; %MATCH-SCANNED-TOKEN's EOF guard (shared
+  ;; by MAKE-IDENTIFIER-RULE and MAKE-NUMBER-RULE) must decline gracefully
+  ;; rather than index out of bounds when invoked directly past the end of
+  ;; SOURCE.
+  (let ((rule (make-identifier-rule)))
+    (expect (funcall (token-rule-matcher rule) "abc" 3) :to-be-falsy)))
+
 (it-sequential "tokenizer-rejects-non-advancing-rules-test"
   (let* ((rule (make-token-rule
                 :type :stuck

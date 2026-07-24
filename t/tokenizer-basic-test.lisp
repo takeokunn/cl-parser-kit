@@ -72,6 +72,25 @@
     (expect (map 'list #'token-text tokens)
             :to-equal '("99999" "99999" "99"))))
 
+(it-sequential "number-rule-parses-a-decimal-number-test"
+  (let* ((tokenizer (make-tokenizer :rules (list (make-number-rule))))
+         (tokens (tokenize "3.14" tokenizer)))
+    (assert-tokenizer-tokens
+     tokens
+     (list (%make-tokenizer-token-spec :type :number :text "3.14" :value 3.14)))))
+
+(it-sequential "number-rule-rejects-a-second-interior-decimal-point-test"
+  ;; A second '.' is rejected once SEEN-DOT is already true, splitting a
+  ;; hostile run like "1.2.3" into a decimal number, a lone unmatched dot, and
+  ;; a trailing integer rather than one malformed lexeme.
+  (let* ((tokenizer (make-tokenizer :rules (list (make-number-rule))))
+         (tokens (tokenize "1.2.3" tokenizer)))
+    (assert-tokenizer-tokens
+     tokens
+     (list (%make-tokenizer-token-spec :type :number :text "1.2" :value 1.2)
+           (%make-tokenizer-token-spec :type :unknown :text "." :value #\.)
+           (%make-tokenizer-token-spec :type :number :text "3" :value 3)))))
+
 (it-sequential "tokenizer-rule-constructors-reject-zero-width-basic-rules-test"
   (expect (lambda () (make-literal-rule :empty ""))
           :to-throw 'error)
@@ -82,3 +101,12 @@
                                    t)
                                  :min-length 0))
           :to-throw 'error))
+
+(it-sequential "tokenizer-predicate-rule-skip-p-emits-no-token-test"
+  (let* ((tokenizer (make-tokenizer
+                     :rules (list (make-predicate-rule :ws (lambda (char) (char= char #\Space))
+                                                       :skip-p t)
+                                  (make-identifier-rule))))
+         (tokens (tokenize "  x" tokenizer)))
+    (expect (length tokens) :to-equal 1)
+    (expect (token-text (elt tokens 0)) :to-equal "x")))

@@ -31,6 +31,21 @@
     (expect (token-type (elt tokens 0)) :to-equal :dec)
     (expect (token-value (elt tokens 0)) :to-equal 0)))
 
+(it-sequential "tokenizer-radix-integer-declines-when-no-digit-follows-a-matched-prefix-test"
+  ;; The (empty) prefix matches, but the very next character is not a valid
+  ;; radix digit, so the rule declines a zero-length digit run instead of
+  ;; matching one -- distinct from declining because the prefix itself failed.
+  (let ((tokens (%tokenize-with (list (make-radix-integer-rule :type :hex :radix 16 :prefix "")
+                                      (make-identifier-rule))
+                                "g1")))
+    (expect (token-type (elt tokens 0)) :to-equal :identifier)))
+
+(it-sequential "tokenizer-radix-integer-skip-p-emits-no-token-test"
+  (let ((tokens (%tokenize-with
+                 (list (make-radix-integer-rule :type :hex :radix 16 :prefix "0x" :skip-p t))
+                 "0xFF")))
+    (expect (length tokens) :to-equal 0)))
+
 ;;; MAKE-FLOAT-RULE -----------------------------------------------------------
 
 (it-sequential "tokenizer-float-parses-fractional-test"
@@ -57,6 +72,60 @@
   (let ((tokens (%tokenize-with (list (make-float-rule)) "1e999999")))
     (expect (token-value (elt tokens 0)) :to-equal most-positive-double-float)))
 
+(it-sequential "tokenizer-float-saturates-huge-exponent-for-every-float-type-test"
+  ;; %COERCE-BOUNDED-FLOAT's ECASE covers all four standard float types, not
+  ;; just the DOUBLE-FLOAT default; each must saturate to its own maximum
+  ;; rather than trap.
+  (dolist (case (list (cons 'single-float most-positive-single-float)
+                      (cons 'short-float most-positive-short-float)
+                      (cons 'long-float most-positive-long-float)))
+    (let ((tokens (%tokenize-with (list (make-float-rule :float-type (car case))) "1e999999")))
+      (expect (token-value (elt tokens 0)) :to-equal (cdr case))))
+  ;; A huge negative exponent underflows to zero instead of saturating.
+  (let ((tokens (%tokenize-with (list (make-float-rule)) "1e-999999")))
+    (expect (token-value (elt tokens 0)) :to-equal 0.0d0)))
+
+(it-sequential "tokenizer-float-saturates-huge-negative-mantissa-test"
+  ;; %COERCE-BOUNDED-FLOAT saturates a negative overflow to the most-negative
+  ;; representable float, not just a positive one.
+  (let ((tokens (%tokenize-with (list (make-float-rule :allow-sign t)) "-1e999999")))
+    (expect (token-value (elt tokens 0)) :to-equal (- most-positive-double-float))))
+
+(it-sequential "tokenizer-float-allow-sign-consumes-a-leading-minus-test"
+  (let ((tokens (%tokenize-with (list (make-float-rule :allow-sign t)) "-2.5e-3")))
+    (expect (token-value (elt tokens 0)) :to-equal -2.5d-3))
+  (let ((tokens (%tokenize-with (list (make-float-rule :allow-sign t)) "+1.5")))
+    (expect (token-value (elt tokens 0)) :to-equal 1.5d0)))
+
+(it-sequential "tokenizer-float-declines-a-marker-with-no-following-digit-test"
+  ;; 'e'/'.' with nothing (or no digit) after it is not an exponent/fractional
+  ;; marker: the rule must fall back to the bare integer digits already
+  ;; scanned instead of misreading a lone letter or dot as part of the number.
+  (let ((tokens (%tokenize-with
+                 (list (make-float-rule :require-fractional nil)
+                       (make-predicate-rule :identifier #'alpha-char-p))
+                 "1e")))
+    (expect (map 'list #'token-text tokens) :to-equal '("1" "e")))
+  (let ((tokens (%tokenize-with
+                 (list (make-float-rule :require-fractional nil)
+                       (make-char-rule :dot #\.))
+                 "1.")))
+    (expect (map 'list #'token-text tokens) :to-equal '("1" "."))))
+
+(it-sequential "tokenizer-float-declines-a-sign-with-no-following-exponent-digit-test"
+  ;; 'e' followed by a sign but no digit (e.g. "1e+") is also not a valid
+  ;; exponent -- the sign must not be mistaken for one.
+  (let ((tokens (%tokenize-with
+                 (list (make-float-rule :require-fractional nil)
+                       (make-predicate-rule :identifier #'alpha-char-p)
+                       (make-char-rule :plus #\+))
+                 "1e+")))
+    (expect (map 'list #'token-text tokens) :to-equal '("1" "e" "+"))))
+
+(it-sequential "tokenizer-float-skip-p-emits-no-token-text-or-value-test"
+  (let ((tokens (%tokenize-with (list (make-float-rule :skip-p t)) "1.5")))
+    (expect (length tokens) :to-equal 0)))
+
 ;;; MAKE-OPERATOR-RULE --------------------------------------------------------
 
 (it-sequential "tokenizer-operator-rule-prefers-longest-test"
@@ -66,6 +135,17 @@
     (expect (token-value (elt tokens 0)) :to-equal "=="))
   (let ((tokens (%tokenize-with (list (make-operator-rule :op '("==" "=" "<=" "<"))) "===")))
     (expect (map 'list #'token-text tokens) :to-equal '("==" "="))))
+
+(it-sequential "tokenizer-operator-rule-matcher-declines-at-end-of-source-test"
+  ;; TOKENIZE's own loop never calls a matcher past the end of SOURCE, but
+  ;; TOKEN-RULE-MATCHER is public API, so the matcher itself must still decline
+  ;; gracefully when invoked directly at an out-of-bounds index.
+  (let ((rule (make-operator-rule :op '("+" "-"))))
+    (expect (funcall (token-rule-matcher rule) "+" 1) :to-be-falsy)))
+
+(it-sequential "tokenizer-operator-rule-skip-p-emits-no-token-test"
+  (let ((tokens (%tokenize-with (list (make-operator-rule :op '("+" "-") :skip-p t)) "+")))
+    (expect (length tokens) :to-equal 0)))
 
 (it-sequential "tokenizer-operator-rule-rejects-empty-operator-test"
   (expect (lambda () (make-operator-rule :op '("+" "")))

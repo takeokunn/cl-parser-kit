@@ -53,8 +53,6 @@ delegates to INNER -- to observe how often a position is (re)parsed."
          ;; Both branches try COUNTED at position 0 and fail; the second is cached.
          (grammar (alt (seq counted (type-token :b)) counted))
          (tokens (vector (make-token :type :a :text "a"))))
-    (multiple-value-bind (ok value next failure)
-        (with-parse-memoization (parse-tokens grammar tokens))
-      (declare (ignore value next failure))
-      (expect ok :to-be-falsy)
+    (assert-combinator-failure (with-parse-memoization (parse-tokens grammar tokens))
+        (value next failure)
       (expect (first counter) :to-equal 1))))

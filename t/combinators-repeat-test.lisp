@@ -195,6 +195,23 @@
           (value next failure)
         (expect failure :to-be-truthy)))))
 
+(it-sequential "combinator-length-count-fails-when-count-is-not-a-non-negative-integer-test"
+  ;; A count-parser value that is not an integer, or a negative integer, must
+  ;; fail the parse instead of signalling -- distinct from the count exceeding
+  ;; *MAXIMUM-PARSER-REPETITION-COUNT* tested below.
+  (let ((tokens (vector (make-token :type :string :text "oops" :value "oops"))))
+    (let ((parser (length-count (type-token-value :string)
+                                (type-token-text :identifier))))
+      (assert-combinator-failure (parse-tokens parser tokens)
+          (value next failure)
+        (expect (parse-failure-expected failure) :to-equal :length-count))))
+  (let ((tokens (vector (make-token :type :number :text "-1" :value -1))))
+    (let ((parser (length-count (type-token-value :number)
+                                (type-token-text :identifier))))
+      (assert-combinator-failure (parse-tokens parser tokens)
+          (value next failure)
+        (expect (parse-failure-expected failure) :to-equal :length-count)))))
+
 (it-sequential "combinator-length-count-fails-when-count-exceeds-limit-test"
   (let ((*maximum-parser-repetition-count* 2)
         (tokens (vector (make-token :type :number :text "3" :value 3))))
@@ -419,6 +436,10 @@
   (let ((*maximum-parser-repetition-count* 2))
     (expect (lambda () (times-between 0 3 (type-token :identifier)))
             :to-throw 'error)))
+
+(it-sequential "combinator-times-between-rejects-min-greater-than-max-test"
+  (expect (lambda () (times-between 3 1 (type-token :identifier)))
+          :to-throw 'error))
 
 (it-sequential "combinator-times-between-below-min-without-progress-is-recoverable-test"
   ;; Zero matches when MIN is 1: the failure did not consume input, so it stays

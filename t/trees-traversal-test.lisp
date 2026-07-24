@@ -204,6 +204,14 @@
     (expect (ast-node-equal a b) :to-be-truthy)
     (expect (ast-node-equal a b :include-span t) :to-be-falsy)))
 
+(it-sequential "ast-node-equal-with-include-span-detects-a-differing-start-test"
+  ;; The sibling test above only ever varies END, so it never exercises
+  ;; SPAN-EQUAL's START comparison specifically returning false; this pins
+  ;; matching ENDs and differing STARTs to isolate that branch.
+  (let ((a (make-ast-node :type :n :value 1 :span (make-span :start 0 :end 5)))
+        (b (make-ast-node :type :n :value 1 :span (make-span :start 2 :end 5))))
+    (expect (ast-node-equal a b :include-span t) :to-be-falsy)))
+
 (it-sequential "cst-node-reduce-and-equal-are-provided-too-test"
   (let ((root (make-cst-node
                :type :root :value nil
@@ -212,6 +220,43 @@
     (expect (cst-node-reduce root (lambda (acc n) (declare (ignore n)) (1+ acc)) 0)
             :to-equal 3)
     (expect (cst-node-equal root root) :to-be-truthy)))
+
+(it-sequential "cst-node-of-wraps-parser-value-with-span-test"
+  (with-combinator-tokens (tokens '((:type :id :text "x" :start 0 :end 1)))
+    (let ((parser (cst-node-of :name (type-token-text :id))))
+      (assert-combinator-success (parse-tokens parser tokens)
+          (value next failure)
+        (expect (cst-node-type value) :to-equal :name)
+        (expect (cst-node-value value) :to-equal "x")
+        (expect (cst-node-span value) :to-be-truthy)))))
+
+(it-sequential "cst-node-of-as-children-collects-into-children-test"
+  (with-combinator-tokens (tokens '((:type :a :text "a") (:type :b :text "b")))
+    (let ((parser (cst-node-of :pair
+                               (seq-map (lambda (a b)
+                                          (list (token->cst-node a :a) (token->cst-node b :b)))
+                                        (type-token :a) (type-token :b))
+                               :as-children t)))
+      (assert-combinator-success (parse-tokens parser tokens)
+          (value next failure)
+        (expect (cst-node-type value) :to-equal :pair)
+        (expect (length (cst-node-children value)) :to-equal 2)
+        (expect (cst-node-value value) :to-be-falsy)))))
+
+(it-sequential "cst-node-map-rebuilds-without-mutating-original-test"
+  (let* ((original (make-cst-node
+                    :type :root :value nil
+                    :children (list (make-cst-node :type :token :value 1)
+                                    (make-cst-node :type :token :value 2))))
+         (mapped (cst-node-map original
+                               (lambda (node)
+                                 (when (numberp (cst-node-value node))
+                                   (setf (cst-node-value node)
+                                         (* 10 (cst-node-value node))))
+                                 node))))
+    (expect (cst-node-value (first (cst-node-children mapped))) :to-equal 10)
+    (expect (cst-node-value (second (cst-node-children mapped))) :to-equal 20)
+    (expect (cst-node-value (first (cst-node-children original))) :to-equal 1)))
 
 (it-sequential "token->ast-node-builds-leaf-from-token-test"
   (let* ((token (make-token :type :number :text "42" :value 42 :start 0 :end 2))
@@ -255,6 +300,43 @@
          (rebuilt (sexp->ast-node (ast-node->sexp original :include-span t))))
     (expect (ast-node-equal original rebuilt :include-span t) :to-be-truthy)))
 
+(it-sequential "sexp->ast-node-round-trips-every-span-field-test"
+  ;; AST-NODE-EQUAL's :INCLUDE-SPAN comparison only checks START/END (per its
+  ;; own documented contract), so the two tests above cannot catch %SPAN->PLIST
+  ;; and %PLIST->SPAN silently drifting out of sync on SOURCE/*-LINE/*-COLUMN --
+  ;; each hand-lists the same seven span fields independently. This checks
+  ;; every field individually, with values distinct enough that transposing any
+  ;; two would fail.
+  (let* ((original (make-ast-node
+                    :type :n :value 1
+                    :span (make-span :source "src" :start 10 :end 20
+                                     :start-line 3 :start-column 4
+                                     :end-line 5 :end-column 6)))
+         (rebuilt (sexp->ast-node (ast-node->sexp original :include-span t)))
+         (span (ast-node-span rebuilt)))
+    (expect (span-source span) :to-equal "src")
+    (expect (span-start span) :to-equal 10)
+    (expect (span-end span) :to-equal 20)
+    (expect (span-start-line span) :to-equal 3)
+    (expect (span-start-column span) :to-equal 4)
+    (expect (span-end-line span) :to-equal 5)
+    (expect (span-end-column span) :to-equal 6)))
+
+(it-property "property-ast-node-sexp-round-trips-for-any-depth"
+    ((depth (gen-integer :min 1 :max 50)))
+  ;; SEXP->AST-NODE-ROUND-TRIPS-TEST above is one fixed example; this checks
+  ;; the same law -- (AST-NODE-EQUAL node (SEXP->AST-NODE (AST-NODE->SEXP
+  ;; node))) -- holds across a randomly generated range of linear depths.
+  (let* ((original (%deep-ast depth))
+         (rebuilt (sexp->ast-node (ast-node->sexp original))))
+    (expect (ast-node-equal original rebuilt) :to-be-truthy)))
+
+(it-property "property-ast-node-sexp-round-trips-for-any-child-count"
+    ((child-count (gen-integer :min 0 :max 50)))
+  (let* ((original (%wide-ast child-count))
+         (rebuilt (sexp->ast-node (ast-node->sexp original))))
+    (expect (ast-node-equal original rebuilt) :to-be-truthy)))
+
 (it-sequential "cst-node-construction-and-serialization-provided-too-test"
   (let* ((token (make-token :type :ident :text "y"))
          (leaf (token->cst-node token :identifier)))
@@ -290,6 +372,22 @@
   ;; A value containing a double quote must be escaped, not left raw.
   (let ((dot (ast-node->dot (make-ast-node :type :str :value "a\"b"))))
     (expect (search "\\\"" dot) :to-be-truthy)))
+
+(it-sequential "ast-node->dot-escapes-a-newline-in-the-label-test"
+  ;; %DOT-ESCAPE's #\Newline case is distinct from its #\" and #\\ cases --
+  ;; a raw newline would break DOT's one-line-per-label-attribute syntax.
+  (let ((dot (ast-node->dot (make-ast-node :type :str
+                                           :value (format nil "a~%b")))))
+    (expect (search "\\n" dot) :to-be-truthy)))
+
+(it-sequential "ast-node-equal-with-include-data-detects-a-difference-test"
+  ;; Every other AST-NODE-EQUAL test above compares structure/value/span; none
+  ;; passes :INCLUDE-DATA T, so the DATA comparison itself was unexercised.
+  (let ((a (make-ast-node :type :n :value 1 :data :a))
+        (b (make-ast-node :type :n :value 1 :data :b)))
+    (expect (ast-node-equal a b) :to-be-truthy)
+    (expect (ast-node-equal a b :include-data t) :to-be-falsy)
+    (expect (ast-node-equal a a :include-data t) :to-be-truthy)))
 
 (it-sequential "cst-node-rendering-is-provided-too-test"
   (let ((root (make-cst-node :type :root :value nil

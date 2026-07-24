@@ -28,15 +28,18 @@
               (cl-parser-kit:parse-failure-committed-p right))))))))
 
 (defun %merge-pair-mutation-cases ()
-  ;; (LEFT RIGHT) pairs exercising: right farther, left farther, and a tie
-  ;; (equal positions), each with distinguishable expected/actual/committed-p
-  ;; so a mutant taking the wrong branch produces different observable output.
+  ;; (LEFT RIGHT) pairs exercising: right farther, left farther, and two ties
+  ;; (equal positions, one with each side of the ACTUAL fallback exercised),
+  ;; each with distinguishable expected/actual/committed-p so a mutant taking
+  ;; the wrong branch produces different observable output.
   (list (list (make-parse-failure :position 1 :expected '(:number) :actual :plus)
              (make-parse-failure :position 5 :expected '(:identifier) :actual :minus))
        (list (make-parse-failure :position 5 :expected :number :actual :minus :committed-p t)
              (make-parse-failure :position 2 :expected :identifier :actual :plus))
        (list (make-parse-failure :position 3 :expected :a :actual nil)
-             (make-parse-failure :position 3 :expected :b :actual :c :committed-p t))))
+             (make-parse-failure :position 3 :expected :b :actual :c :committed-p t))
+       (list (make-parse-failure :position 4 :expected :d :actual :left-actual)
+             (make-parse-failure :position 4 :expected :e :actual nil))))
 
 (defun %merge-pair-observable (failure)
   (list (parse-failure-position failure)

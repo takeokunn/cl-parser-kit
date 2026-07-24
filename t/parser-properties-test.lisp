@@ -59,20 +59,17 @@
 (it-property "property-many-consumes-every-matching-token"
     ((count (gen-integer :min 0 :max 40)))
   (let ((tokens (%identifier-vector count)))
-    (multiple-value-bind (ok value next failure)
-        (parse-tokens (many (type-token :identifier)) tokens)
-      (declare (ignore failure))
-      (expect ok :to-be-truthy)
+    (assert-combinator-success (parse-tokens (many (type-token :identifier)) tokens)
+        (value next failure)
       (expect next :to-equal count)
       (expect (length value) :to-equal count))))
 
 (it-property "property-sep-by1-yields-one-item-per-operand"
     ((count (gen-integer :min 1 :max 25)))
   (let ((tokens (%comma-separated-vector count)))
-    (multiple-value-bind (ok value next failure)
+    (assert-combinator-success
         (parse-all (sep-by1 (type-token :identifier) (type-token :comma)) tokens)
-      (declare (ignore failure))
-      (expect ok :to-be-truthy)
+        (value next failure)
       (expect (length value) :to-equal count)
       (expect next :to-equal (max 0 (1- (* 2 count)))))))
 
@@ -80,10 +77,9 @@
     ((count (gen-integer :min 1 :max 25))
      (trailing (gen-member '(t nil))))
   (let ((tokens (%comma-separated-vector count :trailing trailing)))
-    (multiple-value-bind (ok value next failure)
+    (assert-combinator-success
         (parse-all (sep-end-by1 (type-token :identifier) (type-token :comma)) tokens)
-      (declare (ignore failure))
-      (expect ok :to-be-truthy)
+        (value next failure)
       (expect (length value) :to-equal count)
       (expect next :to-equal (length tokens)))))
 
@@ -161,18 +157,16 @@
   ;; A hostile run of prefix operators must fail gracefully instead of
   ;; exhausting the control stack (security hardening).
   (let ((*maximum-pratt-recursion-depth* 100))
-    (multiple-value-bind (ok value next failure)
+    (assert-combinator-failure
         (parse-pratt-all (%deep-prefix-vector 500) (%deep-prefix-table))
-      (declare (ignore value next))
-      (expect ok :to-be-falsy)
+        (value next failure)
       (expect (parse-failure-expected failure) :to-equal :maximum-recursion-depth))))
 
 (it-sequential "pratt-depth-guard-allows-input-within-limit"
   (let ((*maximum-pratt-recursion-depth* 100))
-    (multiple-value-bind (ok value next failure)
+    (assert-combinator-success
         (parse-pratt-all (%deep-prefix-vector 20) (%deep-prefix-table))
-      (declare (ignore next failure))
-      (expect ok :to-be-truthy)
+        (value next failure)
       (expect (%leftmost-leaf-neg value) :to-equal 1))))
 
 (defun %leftmost-leaf-neg (tree)
@@ -184,10 +178,8 @@
     ((operands (gen-integer :min 1 :max 20)))
   (let ((tokens (%plus-chain-vector operands))
         (table (%left-fold-plus-table)))
-    (multiple-value-bind (ok value next failure)
-        (parse-pratt-all tokens table)
-      (declare (ignore next failure))
-      (expect ok :to-be-truthy)
+    (assert-combinator-success (parse-pratt-all tokens table)
+        (value next failure)
       (expect (%add-node-count value) :to-equal (1- operands))
       (expect (%leftmost-leaf value) :to-equal 1))))
 
@@ -221,18 +213,16 @@ consumer's grammar would."
   ;; A hostile run of nested delimiters must fail gracefully instead of
   ;; exhausting the control stack.
   (let ((*maximum-parser-recursion-depth* 1000))
-    (multiple-value-bind (ok value next failure)
+    (assert-combinator-failure
         (parse-tokens (%nested-expr-parser) (%nested-paren-tokens 5000))
-      (declare (ignore value next))
-      (expect ok :to-be-falsy)
+        (value next failure)
       (expect (parse-failure-expected failure) :to-equal :maximum-recursion-depth))))
 
 (it-sequential "combinator-depth-guard-allows-input-within-limit"
   (let ((*maximum-parser-recursion-depth* 1000))
-    (multiple-value-bind (ok value next failure)
+    (assert-combinator-success
         (parse-tokens (%nested-expr-parser) (%nested-paren-tokens 5))
-      (declare (ignore next failure))
-      (expect ok :to-be-truthy)
+        (value next failure)
       (expect (token-value value) :to-equal 1))))
 
 (defun %operator-chain-tokens (operand-count)
@@ -251,16 +241,14 @@ consumer's grammar would."
   ;; result feeds MULTIPLE-VALUE-BIND), so it needs its own explicit guard
   ;; distinct from the general RUN-PARSER check above.
   (let ((*maximum-parser-recursion-depth* 1000))
-    (multiple-value-bind (ok value next failure)
+    (assert-combinator-failure
         (parse-tokens (%chainr1-parser) (%operator-chain-tokens 5000))
-      (declare (ignore value next))
-      (expect ok :to-be-falsy)
+        (value next failure)
       (expect (parse-failure-expected failure) :to-equal :maximum-recursion-depth))))
 
 (it-sequential "chainr1-depth-guard-allows-input-within-limit"
   (let ((*maximum-parser-recursion-depth* 1000))
-    (multiple-value-bind (ok value next failure)
+    (assert-combinator-success
         (parse-tokens (%chainr1-parser) (%operator-chain-tokens 5))
-      (declare (ignore next failure))
-      (expect ok :to-be-truthy)
+        (value next failure)
       (expect value :to-equal '(:expt 1 (:expt 1 (:expt 1 (:expt 1 1))))))))

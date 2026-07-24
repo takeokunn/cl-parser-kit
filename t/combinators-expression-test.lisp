@@ -75,11 +75,10 @@
                  (type-token-value :number)
                  (list (list (list :infix-non-assoc
                                    (operator-parser (literal "<") (lambda (l r) (list :< l r)))))))))
-    (multiple-value-bind (ok value next failure)
+    (assert-combinator-failure
         (parse-all parser
                    (vector (%expr-num 1) (%expr-op "<") (%expr-num 2) (%expr-op "<") (%expr-num 3)))
-      (declare (ignore value next failure))
-      (expect ok :to-be-falsy))))
+        (value next failure))))
 
 (it-sequential "expression-parser-rejects-mixed-associativity-level-test"
   (expect (nth-value 1 (ignore-errors

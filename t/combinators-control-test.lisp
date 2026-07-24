@@ -17,10 +17,8 @@
   (let* ((tokens (vector (make-token :type :plus :text "+")))
          (parser (opt (seq (type-token :plus)
                            (type-token :number)))))
-    (multiple-value-bind (ok value next failure)
-        (parse-tokens parser tokens)
-      (expect ok :to-be-falsy)
-      (expect value :to-be-falsy)
+    (assert-combinator-failure (parse-tokens parser tokens)
+        (value next failure)
       (expect next :to-equal 1)
       (expect (parse-failure-position failure) :to-equal 1)
       (expect (parse-failure-expected failure) :to-equal :number)
@@ -39,9 +37,8 @@
   (with-combinator-tokens (tokens *positioned-identifier-comma-token-specs*)
     (let ((parser (opt (lookahead (seq (type-token :identifier)
                                        (end-of-input))))))
-      (multiple-value-bind (ok value next diagnostics)
-          (run-parser parser tokens 0)
-        (expect ok :to-be-truthy)
+      (assert-combinator-success (run-parser parser tokens 0)
+          (value next diagnostics)
         (expect value :to-be-falsy)
         (expect next :to-equal 0)
         (%assert-single-diagnostic diagnostics
@@ -51,20 +48,16 @@
 (it-sequential "combinator-label-overrides-expected-test"
   (let* ((tokens (vector (make-token :type :number :text "42" :value 42)))
          (parser (label (type-token :identifier) :binding-name)))
-    (multiple-value-bind (ok value next failure)
-        (parse-tokens parser tokens)
-      (expect ok :to-be-falsy)
-      (expect value :to-be-falsy)
+    (assert-combinator-failure (parse-tokens parser tokens)
+        (value next failure)
       (expect next :to-equal 0)
       (expect (parse-failure-expected failure) :to-equal :binding-name)
       (expect (token-type (parse-failure-actual failure)) :to-equal :number))))
 
 (it-sequential "combinator-label-alias-test"
   (let ((parser (label (type-token :identifier) "binding name")))
-    (multiple-value-bind (ok value next failure)
-        (parse-tokens parser #())
-      (expect ok :to-be-falsy)
-      (expect value :to-be-falsy)
+    (assert-combinator-failure (parse-tokens parser #())
+        (value next failure)
       (expect next :to-equal 0)
       (expect (parse-failure-expected failure) :to-equal "binding name")
       (expect (parse-failure-actual failure) :to-equal :eof))))
@@ -76,6 +69,13 @@
         (value next failure)
       (expect next :to-equal 1)
       (expect value :to-equal 8))))
+
+(it-sequential "combinator-verify-defaults-expected-name-to-verify-test"
+  (let ((tokens (vector (make-token :type :number :text "7" :value 7)))
+        (parser (verify (type-token-value :number) #'evenp)))
+    (assert-combinator-failure (parse-tokens parser tokens)
+        (value next failure)
+      (expect (parse-failure-expected failure) :to-equal :verify))))
 
 (it-sequential "combinator-verify-rejects-value-failing-predicate-test"
   (let ((tokens (vector (make-token :type :number :text "7" :value 7)))
@@ -148,10 +148,8 @@
                       (seq (type-token :identifier)
                            (type-token :identifier)
                            (type-token :rparen)))))
-    (multiple-value-bind (ok value next failure)
-        (parse-tokens parser tokens)
-      (expect ok :to-be-falsy)
-      (expect value :to-be-falsy)
+    (assert-combinator-failure (parse-tokens parser tokens)
+        (value next failure)
       (expect next :to-equal 2)
       (expect (parse-failure-position failure) :to-equal 2)
       (expect (parse-failure-expected failure) :to-equal :rparen))))
@@ -161,10 +159,8 @@
                          (make-token :type :comma :text ",")))
          (parser (alt (seq (type-token :identifier) (type-token :equals))
                       (seq (type-token :identifier) (type-token :rparen)))))
-    (multiple-value-bind (ok value next failure)
-        (parse-tokens parser tokens)
-      (expect ok :to-be-falsy)
-      (expect value :to-be-falsy)
+    (assert-combinator-failure (parse-tokens parser tokens)
+        (value next failure)
       (expect next :to-equal 1)
       (expect (parse-failure-position failure) :to-equal 1)
       (expect (parse-failure-expected failure) :to-equal '(:equals :rparen)))))
@@ -174,10 +170,8 @@
                          (make-token :type :plus :text "+")))
          (parser (lookahead (seq (type-token :identifier)
                                  (type-token :plus)))))
-    (multiple-value-bind (ok value next failure)
-        (parse-tokens parser tokens)
-      (declare (ignore failure))
-      (expect ok :to-be-truthy)
+    (assert-combinator-success (parse-tokens parser tokens)
+        (value next failure)
       (expect next :to-equal 0)
       (expect (length value) :to-equal 2))))
 
@@ -186,10 +180,8 @@
                          (make-token :type :comma :text ",")))
          (parser (lookahead (seq (type-token :identifier)
                                  (type-token :plus)))))
-    (multiple-value-bind (ok value next failure)
-        (parse-tokens parser tokens)
-      (expect ok :to-be-falsy)
-      (expect value :to-be-falsy)
+    (assert-combinator-failure (parse-tokens parser tokens)
+        (value next failure)
       (expect next :to-equal 1)
       (expect (parse-failure-position failure) :to-equal 1)
       (expect (parse-failure-expected failure) :to-equal :plus)
@@ -213,6 +205,16 @@
                                    "Unexpected token"
                                    "foo")))))
 
+(it-sequential "combinator-not-followed-by-succeeds-at-end-of-input-test"
+  ;; With no token left to try, the inner parser fails, so NOT-FOLLOWED-BY
+  ;; succeeds without ever needing to look at a token.
+  (let ((parser (not-followed-by (type-token :identifier))))
+    (assert-combinator-success (parse-tokens parser (vector))
+        (value next failure)
+      (declare (ignore failure))
+      (expect value :to-be-truthy)
+      (expect next :to-equal 0))))
+
 (it-sequential "combinator-not-followed-by-falls-back-to-token-offsets-test"
   (with-combinator-tokens (tokens *offset-identifier-token-specs*)
     (let ((parser (not-followed-by (type-token :identifier))))
@@ -227,14 +229,13 @@
   (let* ((source "ab
 foo")
          (parser (not-followed-by (type-token :identifier))))
-    (multiple-value-bind (ok value next failure)
+    (assert-combinator-failure
         (parse-tokens parser (vector (make-token :type :identifier
                                                  :text "foo"
                                                  :start 3
                                                  :end 6
                                                  :metadata (list :source source))))
-      (expect ok :to-be-falsy)
-      (expect value :to-be-falsy)
+        (value next failure)
       (expect next :to-equal 0)
       (let* ((diagnostic (first (parse-failure-diagnostics failure)))
              (span (diagnostic-span diagnostic))

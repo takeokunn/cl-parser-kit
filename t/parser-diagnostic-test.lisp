@@ -4,9 +4,8 @@
   ;; A failure whose actual is a token exposes that token's span for rendering.
   (let* ((tokens (vector (make-token :type :number :text "1" :value 1 :start 0 :end 1)))
          (parser (type-token :identifier)))
-    (multiple-value-bind (ok value next failure)
-        (parse-tokens parser tokens)
-      (declare (ignore ok value next))
+    (assert-combinator-failure (parse-tokens parser tokens)
+        (value next failure)
       (let ((span (parse-failure-span failure)))
         (expect (typep span 'span) :to-be-truthy)
         (expect (span-start span) :to-equal 0)
@@ -15,9 +14,8 @@
 (it-sequential "parse-failure-span-is-nil-at-end-of-input-test"
   ;; At EOF the actual is :EOF, not a token, so there is no span.
   (let ((parser (type-token :identifier)))
-    (multiple-value-bind (ok value next failure)
-        (parse-tokens parser #())
-      (declare (ignore ok value next))
+    (assert-combinator-failure (parse-tokens parser #())
+        (value next failure)
       (expect (parse-failure-actual failure) :to-equal :eof)
       (expect (parse-failure-span failure) :to-be-falsy))))
 

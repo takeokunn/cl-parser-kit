@@ -97,20 +97,17 @@
                                      :start 7
                                      :end 8
                                      :metadata (list :source source))))
-         (parser (type-token :identifier))
-         (rendered
-           (multiple-value-bind (ok value next failure)
-               (parse-all parser tokens)
-             (declare (ignore value next))
-             (if ok
-                 :ok
-                 (parse-failure->string failure)))))
-    (expect (stringp rendered) :to-be-truthy)
-    (assert-string-contains-all
-     rendered
-     '("Unexpected trailing token"
-       "2:1-2:2"
-       "  | +"))))
+         (parser (type-token :identifier)))
+    ;; PARSER only consumes the identifier, so PARSE-ALL's full-consumption
+    ;; check always trips on the trailing "+" -- this snippet demonstrates
+    ;; rendering that failure, not a genuinely either-outcome parse.
+    (assert-combinator-failure (parse-all parser tokens)
+        (value next failure)
+      (assert-string-contains-all
+       (parse-failure->string failure)
+       '("Unexpected trailing token"
+         "2:1-2:2"
+         "  | +")))))
  (examples-guide-parse-source-end-to-end-snippet-test
   (let* ((tokenizer (make-let-example-tokenizer))
          (parser (seq
@@ -144,23 +141,24 @@
                   (type-token :number)
                   (opt (literal ";" :type :semicolon))
                   (end-of-input))))
-    (let ((result
-            (multiple-value-bind (ok value)
-                (parse-source parser "let answer = 42;" tokenizer)
-              (declare (ignore value))
-              (when ok
-                (let ((cst (make-cst-node
-                            :type :binding
-                            :children (list (make-cst-node :type :keyword :value "let")
-                                            (make-cst-node :type :identifier :value "answer")
-                                            (make-cst-node :type :punctuation :value "=")
-                                            (make-cst-node :type :number :value "42")
-                                            (make-cst-node :type :punctuation :value ";")))))
-                  (cst-node->sexp cst))))))
-      (expect result :to-equal '(:type :binding
-                      :value nil
-                      :children ((:type :keyword :value "let" :children ())
-                                 (:type :identifier :value "answer" :children ())
-                                 (:type :punctuation :value "=" :children ())
-                                 (:type :number :value "42" :children ())
-                                 (:type :punctuation :value ";" :children ()))))))))
+    ;; "let answer = 42;" always parses successfully against PARSER, so this
+    ;; snippet demonstrates building a CST from a known-good parse, not a
+    ;; genuinely either-outcome one; VALUE is unused because the CST below is
+    ;; built from literal text for the snippet, not from the parsed tokens.
+    (assert-combinator-success (parse-source parser "let answer = 42;" tokenizer)
+        (value next failure)
+      (let* ((cst (make-cst-node
+                  :type :binding
+                  :children (list (make-cst-node :type :keyword :value "let")
+                                  (make-cst-node :type :identifier :value "answer")
+                                  (make-cst-node :type :punctuation :value "=")
+                                  (make-cst-node :type :number :value "42")
+                                  (make-cst-node :type :punctuation :value ";"))))
+             (result (cst-node->sexp cst)))
+        (expect result :to-equal '(:type :binding
+                        :value nil
+                        :children ((:type :keyword :value "let" :children ())
+                                   (:type :identifier :value "answer" :children ())
+                                   (:type :punctuation :value "=" :children ())
+                                   (:type :number :value "42" :children ())
+                                   (:type :punctuation :value ";" :children ())))))))))

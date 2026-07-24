@@ -25,7 +25,32 @@
       (expect (token-type token) :to-equal :identifier)
       (expect next :to-equal 1))
     (expect (eof-token-p tokens 0) :to-be-falsy)
-    (expect (eof-token-p tokens (length tokens)) :to-be-truthy)))
+    (expect (eof-token-p tokens (length tokens)) :to-be-truthy)
+    ;; %TOKEN-STREAM-TOKEN-AT (shared by PEEK-TOKEN/NEXT-TOKEN) returns NIL
+    ;; past the end of the stream, distinct from the token-present case above.
+    (expect (peek-token tokens (length tokens)) :to-be-falsy)
+    (multiple-value-bind (token next)
+        (next-token tokens (length tokens))
+      (expect token :to-be-falsy)
+      (expect next :to-equal (length tokens)))))
+
+(it-sequential "eof-token-p-accepts-a-list-token-stream-test"
+  ;; EOF-TOKEN-P's ETYPECASE has a dedicated LIST clause distinct from its
+  ;; string/vector one -- length-based indexing doesn't apply to a list, so
+  ;; it walks with NTH instead.
+  (let ((tokens (list (make-token :type :identifier :text "a"))))
+    (expect (eof-token-p tokens 0) :to-be-falsy)
+    (expect (eof-token-p tokens 1) :to-be-truthy)
+    ;; A negative position is not EOF either -- it is simply invalid.
+    (expect (eof-token-p tokens -1) :to-be-falsy)))
+
+(it-sequential "eof-token-p-rejects-a-tokens-argument-of-an-unsupported-type-test"
+  ;; EOF-TOKEN-P's ETYPECASE covers only (OR STRING VECTOR) and LIST; a value
+  ;; of neither type (so the LIST clause's own dispatch test is exercised as
+  ;; false, having already fallen through the string/vector clause) must fall
+  ;; through to a signalled error rather than silently returning a bogus
+  ;; answer.
+  (expect (lambda () (eof-token-p 42 0)) :to-throw 'error))
 
 (it-sequential "parse-failure-test"
   (with-parser-tokens ("answer + 1" *identifier-plus-number-rule-specs*)
